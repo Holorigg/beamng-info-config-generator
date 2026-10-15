@@ -2,6 +2,12 @@ name: Build
 
 on:
   workflow_dispatch:
+    inputs:
+      portable_only:
+        description: Build only the portable ZIP (for manual artifact runs)
+        required: false
+        type: boolean
+        default: false
   push:
     tags:
       - "v*"
@@ -35,20 +41,37 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
-      - name: Build and smoke-test executable
+      - name: Build and smoke-test executable and portable ZIP
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.portable_only != true }}
         run: python build_windows.py
 
-      - name: Upload artifact
+      - name: Build and smoke-test portable ZIP only
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.portable_only == true }}
+        run: python build_windows.py --portable
+
+      - name: Upload full build artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.portable_only != true }}
         uses: actions/upload-artifact@v7.0.2
         with:
           name: beamng-infogen-windows
           path: |
             dist/beamng-infogen.exe
+            dist/beamng-infogen-portable.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Upload portable-only artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.portable_only == true }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: beamng-infogen-windows-portable
+          path: |
+            dist/beamng-infogen-portable.zip
             dist/SHA256SUMS.txt
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-24.04
     permissions:
@@ -64,6 +87,7 @@ jobs:
         with:
           files: |
             dist/beamng-infogen.exe
+            dist/beamng-infogen-portable.zip
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
           body_path: docs/releases/${{ github.ref_name }}.md

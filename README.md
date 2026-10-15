@@ -1,97 +1,79 @@
+<img align="right" src="docs/images/app-icon.png" width="88" height="88" alt="Application icon">
+
 # BeamNG Info Config Generator
 
-A Windows desktop editor for BeamNG.drive vehicle configuration metadata. Scan ZIP archives and extracted mods, create missing info files, repair incomplete metadata, and edit individual configs without extracting entire archives.
+Create, edit, and repair `info_*.json` files for **BeamNG.drive vehicle configurations**, directly in ZIP mods or extracted folders.
 
-The app helps prepare metadata for systems such as RLS Career Overhaul. Passing its metadata checks does not guarantee an in-game dealership listing; that also depends on the installed game, mod version, and seller filters.
+[Releases](https://github.com/Holorigg/beamng-info-config-generator/releases) · [Report a bug](https://github.com/Holorigg/beamng-info-config-generator/issues) · [Changelog](CHANGELOG.md)
 
-## Install
+![Latest release](https://img.shields.io/github/v/release/Holorigg/beamng-info-config-generator?color=328663)
+![Tests](https://github.com/Holorigg/beamng-info-config-generator/actions/workflows/test.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/license-MIT-58636c)
 
-Download the Windows executable from [GitHub Releases](https://github.com/Holorigg/beamng-info-config-generator/releases). The standalone executable includes Python and the application dependencies.
+## Download
 
-To run from source, install Python 3.10 or newer, then in PowerShell:
+**Windows x64. No Python installation required.**
 
-```powershell
-python -m pip install -r requirements.txt
-python main.py
-```
+| Version | Download | How to run |
+| --- | --- | --- |
+| Single EXE | [beamng-infogen.exe](https://github.com/Holorigg/beamng-info-config-generator/releases/latest/download/beamng-infogen.exe) | Download and launch. Settings are saved in your user folder. |
+| Portable ZIP | [beamng-infogen-portable.zip](https://github.com/Holorigg/beamng-info-config-generator/releases/latest/download/beamng-infogen-portable.zip) | Extract the whole folder, then launch the EXE inside. Settings and logs stay in its `data` folder. |
 
-You can open a particular mods directory at startup:
+Neither version needs an installer. Keep the portable folder together, including `_internal`; do not run it from inside the ZIP. Checksums are included in [SHA256SUMS.txt](https://github.com/Holorigg/beamng-info-config-generator/releases/latest/download/SHA256SUMS.txt).
 
-```powershell
-python main.py --mods-path "C:/Users/you/AppData/Local/BeamNG/BeamNG.drive/current/mods"
-```
+## The Editor
 
-## Features
+![BeamNG configuration editor with status filters, configuration details, and bulk actions](docs/images/app-overview.png)
 
-- Scan ZIP mods, extracted mod folders, and mods under common `repo` and `unpacked` containers. A single extracted mod folder can also be opened.
-- Search configurations and filter by missing, incomplete, or valid metadata; switch between tree and sortable table views, with multi-selection.
-- Edit details in a form or JSON editor, inspect a metadata preview, and copy form values from another configuration.
-- Save edits while retaining existing fields the form does not edit, including display names, years, paints, statistics, and mod-specific properties. Unsaved edits are protected when switching configurations, rescanning, or closing.
-- Generate missing info files, repair invalid required fields, regenerate a selected file after confirmation, or analyze metadata issues.
-- Review session operation history, including errors and cancellations, and export it as JSON.
+<sub>A real mod library. Mod and configuration names, descriptions, and local paths are blurred for privacy.</sub>
 
-Search and status filters only affect browsing. **Generate missing** and **Fix incomplete** operate on all loaded configurations; only **Generate selected** is limited to the current selection.
+- **Find missing info files.** Scan a mods directory, search configurations, and filter by Missing, Incomplete, or Valid.
+- **Edit one config or process a batch.** Use the form, edit the full JSON, or generate metadata for a selection.
+- **Keep existing metadata.** Ordinary saves retain fields the form does not edit, such as years, paints, and custom properties.
+- **Work with archives directly.** New info files can be appended without extracting the mod. Replacements are grouped by archive.
+- **See what happened.** Operations have progress, cancellation, and a history of completed writes and errors.
 
-Drivetrain, transmission, and fuel detection from part names is heuristic. Check inferred values when accuracy matters. The app does not run vehicle performance tests or calculate statistics from JBeam parts; enter power, torque, weight, acceleration, and braking values only when supported by measurements or known data.
+ZIP mods, extracted mods, and the usual `repo` and `unpacked` folders are supported. You can also open a single extracted mod folder.
 
-## ZIP Writes And Backups
+## Quick Start
 
-Choose a write mode and optional backup setting in **Settings**:
+1. Click **Browse** and select your BeamNG mods directory. The game's launcher can help locate your current user folder.
+2. Click **Scan**, then select a configuration to inspect its info file.
+3. Open **Settings** and enable **Back up before writes** before making bulk changes.
+4. Use **Generate missing** for absent files, **Fix incomplete** for invalid required fields, or edit a configuration and click **Save**.
 
-| Mode | New files | Replacements | Memory use |
-| --- | --- | --- | --- |
-| Automatic (default) | Append to archive | Rebuild on disk | Bounded buffers for archive copying |
-| Disk | Rebuild on disk | Rebuild on disk | Bounded buffers for archive copying |
-| RAM | Rebuild in memory | Rebuild in memory | Holds the rebuilt compressed archive in memory |
+**Bulk actions apply to all loaded configurations, not just the current search or status filter.** Use **Generate selected** to limit generation to your selection.
 
-Writes to each archive are grouped. Disk and RAM rebuilds are assembled in a temporary file beside the original and committed by replacement. They require enough free disk space for the replacement archive; RAM mode additionally requires memory for the compressed output and is not necessarily faster. Large replacements can take time. Rebuilt archives preserve the archive comment and existing entry metadata; entries are streamed rather than loaded all at once.
+`Ctrl+S` saves the active draft. `F5` rescans. Unsaved edits prompt you before switching configurations, rescanning, or closing.
 
-Automatic append keeps the previous central-directory tail for rollback if a write raises a caught error. This is not protection against power loss, forced process termination, or every possible filesystem failure. **Back up before writes** makes dated `.bak` copies beside originals; a ZIP backup needs space for the complete original archive. Folder JSON writes use a temporary file and replacement. Cancellation stops later work and can abort an archive rebuild, but groups already completed remain saved. Check **History** for failures and actual success counts.
+## ZIP Write Modes
 
-## Metadata And JSON
+<img src="docs/images/zip-settings.png" width="420" alt="ZIP write mode and backup settings">
 
-New info files use the actual `.pc` filename stem:
-
-```text
-vehicles/car/sport.pc       -> vehicles/car/info_sport.json
-vehicles/car/config_race.pc -> vehicles/car/info_config_race.json
-```
-
-Existing naming alternatives remain readable, and existing files are updated at their current paths. `Configuration` is a display name and does not have to match the `.pc` filename.
-
-The validity check requires nonempty `Configuration`, `Config Type`, `Drivetrain`, `Transmission`, and `Fuel Type` strings, plus a finite positive `Value`. The reader accepts standard JSON and common JSON5 syntax, UTF-8 BOM, and cp1251-encoded files. Saving writes standard JSON; comments and the original formatting are not retained.
-
-The form merges its edited values into the existing document and retains additional fields. **Regenerate** deliberately replaces the full info document after confirmation. Bulk repair skips malformed info files so their raw contents are not silently overwritten.
-
-See the [BeamNG configuration guide](https://documentation.beamng.com/modding/vehicle/tutorials/configs/) and [performance statistics discussion](https://beamng.com/threads/performance-statistics-feedback-thread.28306/) for metadata context. The discussion includes older launch instructions; verify them against your game version before use. More implementation references are in [docs/RESEARCH.md](docs/RESEARCH.md).
-
-## Settings And About
-
-The About dialog identifies the author as Holorigg and includes project, issue, and bundled license information. The application and window use a generated icon; interface icons are bundled Lucide SVGs and work offline. See [icons/lucide/SOURCE.md](icons/lucide/SOURCE.md) for icon attribution.
-
-Window layout, view mode, last directory, and ZIP settings are stored in `~/.beamng_infogen.json`. Unexpected application errors are written to `~/.beamng_infogen.log` with log rotation.
-
-| Shortcut | Action |
+| Mode | What it does |
 | --- | --- |
-| Ctrl+S | Save the active draft |
-| F5 | Rescan |
+| **Automatic** (default) | Appends new files. Rebuilds on disk when replacing existing files. |
+| **Disk** | Streams a rebuilt archive through a temporary file, keeping memory use bounded. |
+| **RAM** | Holds the rebuilt compressed archive in memory, then commits it through a temporary file. |
 
-## Development And Windows Build
+Disk and RAM rebuilds need free disk space beside the mod. RAM mode is optional and is not necessarily faster. Backups are dated `.bak` copies; backing up a ZIP needs space for the entire original archive.
 
-Run the tests and UI smoke test with:
+Cancelling stops later work but does not undo completed archives. Append rollback handles caught write errors, not power loss or a forcibly killed process. See [file handling and safety](docs/USAGE.md#file-handling-and-safety) for details.
 
-```powershell
-python -m pip install -r requirements-dev.txt
-python -m unittest discover -s tests -v
-python main.py --smoke-test
-```
+## A Few Things To Know
 
-On Windows, build and smoke-test the standalone executable with:
+**Does it measure horsepower or performance?** No. Part-name detection for drivetrain, transmission, and fuel is heuristic. Enter performance statistics only from measurements or known data.
 
-```powershell
-python build_windows.py
-```
+**Will it fix RLS Career Overhaul listings?** It can create or repair vehicle metadata used by career mods. A Valid status only means the required fields passed this tool's checks; dealer filters, game state, and mod compatibility still matter.
 
-For a console-enabled diagnostic build, use `python build_windows.py --debug`. The build script limits the DLL and Qt plugin search environment to reduce accidental inclusion of unrelated libraries. Its smoke test initializes the packaged UI and checks temporary ZIP/JSON roundtrips; it does not write to installed mods.
+**Does saving preserve my JSON exactly?** Extra fields are retained, but saves use standard JSON. Comments and original formatting are not preserved. **Regenerate** deliberately replaces the full info document after confirmation.
 
-GitHub Actions runs tests on Windows and Linux with Python 3.10 and 3.14. Pushing a `v*` tag runs the Windows build and release workflow; the workflow can also be run manually without publishing a release.
+## Documentation
+
+- [Usage, file formats, and safety](docs/USAGE.md)
+- [Run from source, tests, and Windows builds](docs/DEVELOPMENT.md)
+- [Implementation references](docs/RESEARCH.md)
+
+Created by **Holorigg**. [MIT License](LICENSE). Interface icons: [Lucide / Feather](icons/lucide/SOURCE.md).
+
+Independent project, not affiliated with BeamNG.
