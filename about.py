@@ -11,7 +11,7 @@ from ui_icons import app_icon, icon, resource_path
 
 APP_NAME = "BeamNG Info Config Generator"
 APP_AUTHOR = "Holorigg"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 PROJECT_URL = "https://github.com/Holorigg/beamng-info-config-generator"
 
 

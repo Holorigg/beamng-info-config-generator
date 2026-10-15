@@ -42,6 +42,11 @@ def smoke_check_ui(window):
     dialog = AboutDialog(window)
     dialog.show()
     dialog.close()
+    from rls_dialog import ContractsDialog
+    with tempfile.TemporaryDirectory(prefix="beamng-contracts-smoke-") as directory:
+        contracts = ContractsDialog(directory, [], parent=window)
+        contracts.show()
+        contracts.close()
 
 
 def main():

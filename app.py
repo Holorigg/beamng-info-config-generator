@@ -204,6 +204,7 @@ class App(QMainWindow):
         self._settings = _load_settings()
         self._cancel_event = None
         self._operation_progress = None
+        self._scanned_mods_path = None
 
         self.mods_data: dict[str, list[ConfigEntry]] = {}
         self.selected_entry: Optional[ConfigEntry]   = None
@@ -263,6 +264,8 @@ class App(QMainWindow):
         brand.setObjectName("brand")
         branding.addWidget(brand)
         branding.addStretch()
+        self.contracts_btn = self._button("RLS Contracts", "list-tree", self._show_contracts)
+        branding.addWidget(self.contracts_btn)
         branding.addWidget(self._button("History", "clock-arrow-left", self._show_history))
         branding.addWidget(self._button("Settings", "settings", self._show_settings))
         self.about_btn = self._button("", "info", self._show_about)
@@ -1044,6 +1047,24 @@ class App(QMainWindow):
         if path:
             self.folder_edit.setText(path)
 
+    def _show_contracts(self):
+        if self._busy or not self._confirm_changes():
+            return
+        path = self.folder_edit.text().strip()
+        if not Path(path).is_dir():
+            QMessageBox.warning(self, "RLS Contracts", "Select a valid mods directory first.")
+            return
+        if self._scanned_mods_path != str(Path(path).resolve()):
+            self._scan()
+            if self._scanned_mods_path != str(Path(path).resolve()):
+                return
+        from rls_contracts import model_key
+        from rls_dialog import ContractsDialog
+        entries = [entry for group in self.mods_data.values() for entry in group]
+        selected = {key for entry in entries if id(entry) in self._selection
+                    if (key := model_key(entry))}
+        ContractsDialog(path, entries, selected_keys=selected, parent=self).exec()
+
     def _scan(self):
         if self._busy or not self._confirm_changes():
             return
@@ -1069,6 +1090,7 @@ class App(QMainWindow):
             self.status_lbl.setText("Scan cancelled")
             return
         self.mods_data = worker.value
+        self._scanned_mods_path = str(Path(path).resolve())
         self.selected_entry = None
         self._selection.clear()
         self._collapsed.clear()

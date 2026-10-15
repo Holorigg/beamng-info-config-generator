@@ -110,7 +110,23 @@ def main():
             window.close()
             if errors:
                 raise errors[0]
-    print(f"Saved two redacted screenshots ({sum(map(len, data.values()))} real configurations scanned)")
+            from rls_dialog import ContractsDialog
+            contracts = ContractsDialog(str(args.mods), [e for group in data.values() for e in group])
+            contracts.resize(1280, 760)
+            contracts.show()
+            qt.processEvents()
+            image = capture(contracts)
+            origin = contracts.table.viewport().mapTo(contracts, QPoint(0, 0))
+            header = contracts.table.horizontalHeader()
+            left = origin.x() + header.sectionViewportPosition(1)
+            obscure(image, (left, origin.y(), left + header.sectionSize(1),
+                            origin.y() + contracts.table.viewport().height()))
+            # An existing managed patch can also list private names outside the table.
+            if contracts.preserved_status.isVisible():
+                obscure_widget(image, contracts, contracts.preserved_status)
+            image.save(args.output / "rls-contracts.png", optimize=True)
+            contracts.close()
+    print(f"Saved three redacted screenshots ({sum(map(len, data.values()))} real configurations scanned)")
 
 
 if __name__ == "__main__":

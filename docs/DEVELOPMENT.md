@@ -25,8 +25,12 @@ python main.py --smoke-test
 ```
 
 Tests use temporary fixtures and do not modify installed mods. The smoke test
-initializes the UI, renders icons and About, and checks temporary ZIP/JSON
+initializes the UI, renders icons, About, and RLS Contracts, and checks temporary ZIP/JSON
 roundtrips. It does not scan or write your installed mods.
+
+Lupa is a development-only dependency for executing the addon's Lua 5.1
+lifecycle tests; it is not required to run the application. Optional verification
+against your own RLS archive is documented in [RLS Contracts](RLS_CONTRACTS.md#verification).
 
 ## Windows Packages
 

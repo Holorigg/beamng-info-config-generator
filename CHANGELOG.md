@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.2.0 - 2026-10-15
+
+- Added RLS Contracts diagnostics grouped by vehicle model, with Drift, Drag, and Race eligibility checks.
+- Added a separate switchable addon for selected contract-pool additions, with automatic backups and no edits to RLS, vehicle archives, or saves.
+- Verified against RLS 2.7.2 files and its real selector in an isolated Lua 5.1 environment. No in-game testing; other versions remain available with a warning.
+
 ## v1.1.0 - 2026-10-15
 
 ### Added
