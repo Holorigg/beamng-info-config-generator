@@ -81,9 +81,10 @@ def main():
                         window.tree.scrollToItem(child)
             qt.processEvents()
             image = capture(window)
-            for widget in (window.folder_edit, window.editor_title, window.source_label,
+            for widget in (window.folder_edit, window.source_label,
                            window.w_name, window.w_description):
                 obscure_widget(image, window, widget, 4)
+            obscure_widget(image, window, window.editor_title)
             origin = window.tree.viewport().mapTo(window, QPoint(0, 0))
             for index in range(window.tree.topLevelItemCount()):
                 parent = window.tree.topLevelItem(index)
