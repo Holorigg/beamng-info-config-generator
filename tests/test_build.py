@@ -81,7 +81,7 @@ class BuildTests(unittest.TestCase):
                 f"sys.executable = {str(executable)!r}; "
                 f"runpy.run_path({str(hook)!r}); "
                 "from pathlib import Path; "
-                f"assert Path.home() == Path({str(expected)!r}); "
+                f"assert Path.home().resolve() == Path({str(expected)!r}).resolve(); "
                 "assert Path(os.environ['USERPROFILE']) == Path.home(); "
                 "assert Path(os.environ['HOME']) == Path.home(); "
                 "assert Path.home().is_dir()"
