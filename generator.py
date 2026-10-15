@@ -2,6 +2,7 @@
 info_config JSON generation and validation.
 """
 import random
+import math
 
 _DESC_TEMPLATES = [
     "A well-rounded configuration suited for everyday driving.",
@@ -23,17 +24,19 @@ REQUIRED_FIELDS = ["Value", "Config Type", "Configuration", "Drivetrain", "Trans
 
 def validate(data: dict) -> list[str]:
     """Returns list of missing or invalid required field names."""
+    if not isinstance(data, dict):
+        return list(REQUIRED_FIELDS)
     missing = []
     for f in REQUIRED_FIELDS:
         if f not in data:
             missing.append(f)
         elif f == "Value":
             try:
-                if float(data[f]) <= 0:
+                if isinstance(data[f], bool) or not math.isfinite(float(data[f])) or float(data[f]) <= 0:
                     missing.append(f)
             except (TypeError, ValueError):
                 missing.append(f)
-        elif not data[f] and data[f] != 0:
+        elif not isinstance(data[f], str) or not data[f].strip():
             missing.append(f)
     return missing
 
@@ -61,20 +64,18 @@ def generate(config_name: str, auto_detected: dict, defaults: dict) -> dict:
 def fix(existing: dict, config_name: str, auto_detected: dict, defaults: dict) -> dict:
     """Add only missing required fields; leave all existing fields untouched."""
     result = dict(existing)
-    if not result.get("Configuration"):
+    invalid = set(validate(result))
+    if "Configuration" in invalid:
         result["Configuration"] = config_name
-    if not result.get("Config Type"):
+    if "Config Type" in invalid:
         result["Config Type"] = defaults.get("config_type", "Factory")
-    if not result.get("Drivetrain"):
+    if "Drivetrain" in invalid:
         result["Drivetrain"] = auto_detected.get("Drivetrain", "RWD")
-    if not result.get("Transmission"):
+    if "Transmission" in invalid:
         result["Transmission"] = auto_detected.get("Transmission", "Automatic")
-    if not result.get("Fuel Type"):
+    if "Fuel Type" in invalid:
         result["Fuel Type"] = auto_detected.get("Fuel Type", "Gasoline")
-    try:
-        if not result.get("Value") or float(result["Value"]) <= 0:
-            result["Value"] = _random_price(defaults)
-    except (TypeError, ValueError):
+    if "Value" in invalid:
         result["Value"] = _random_price(defaults)
     return result
 
@@ -87,13 +88,16 @@ def _random_price(defaults: dict) -> int:
         lo, hi = 10000, 50000
     if lo > hi:
         lo, hi = hi, lo
-    return round(random.randint(lo, hi) / 500) * 500
+    lo, hi = max(1, lo), max(1, hi)
+    return min(hi, max(lo, round(random.randint(lo, hi) / 500) * 500))
 
 
 def _apply_stats(data: dict, defaults: dict):
     for key, dkey in [("Power", "power"), ("Torque", "torque"), ("Weight", "weight")]:
         val = defaults.get(dkey, "")
         try:
-            data[key] = int(val)
+            number = float(val)
+            if math.isfinite(number) and number > 0:
+                data[key] = int(number) if number.is_integer() else number
         except (ValueError, TypeError):
             pass

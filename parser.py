@@ -6,6 +6,8 @@ import re
 
 def parse_pc(pc_data: dict) -> dict:
     parts = pc_data.get("parts", {})
+    if not isinstance(parts, dict):
+        parts = {}
     return {
         "Drivetrain":   _detect_drivetrain(parts),
         "Transmission": _detect_transmission(parts),

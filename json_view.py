@@ -6,11 +6,11 @@ Missing/invalid fields highlighted in red (entire line, bold).
 import json
 import re
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import (
     QColor, QFont, QSyntaxHighlighter, QTextCharFormat,
 )
 from PySide6.QtWidgets import QTextEdit, QWidget, QVBoxLayout
+import json_utils
 
 
 class _JsonHighlighter(QSyntaxHighlighter):
@@ -107,8 +107,8 @@ class JsonView(QWidget):
         """Returns (dict, None) or (None, error_str)."""
         raw = self._editor.toPlainText().strip()
         try:
-            return json.loads(raw), None
-        except json.JSONDecodeError as exc:
+            return json_utils.loads(raw), None
+        except ValueError as exc:
             return None, str(exc)
 
     def get_raw_text(self) -> str:

@@ -1,19 +1,48 @@
-"""
-Tolerant JSON reader for BeamNG mod files.
-Handles: trailing commas, missing commas between fields, UTF-8 BOM, cp1251 fallback.
-"""
+"""String-safe JSON/JSON5 reading for BeamNG mod files."""
 import json
 import re
 from pathlib import Path
 
+import pyjson5
+
+# Tokenize strings and comments first: repairs never touch their contents.
+_TOKENS = re.compile(
+    r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|//[^\n]*|/\*[\s\S]*?\*/'
+    r'|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[^\s]',
+    re.MULTILINE,
+)
+
+
+def _repair_missing_commas(text):
+    tokens = [m for m in _TOKENS.finditer(text) if not m.group().startswith(("//", "/*"))]
+    insertions = []
+    for i in range(1, len(tokens) - 1):
+        previous, current, following = tokens[i - 1:i + 2]
+        value = previous.group()
+        ends_value = value[0] in "\"'" or value in ("}", "]", "true", "false", "null") or value[0] in "-0123456789"
+        if (ends_value and following.group() == ":" and
+                "\n" in text[previous.end():current.start()]):
+            insertions.append(previous.end())
+    for position in reversed(insertions):
+        text = text[:position] + "," + text[position:]
+    return text
+
 
 def loads(text: str) -> dict:
-    """Parse JSON text, tolerating trailing commas and missing commas between fields."""
-    text = text.lstrip("\ufeff")                        # strip BOM if any
-    text = re.sub(r",(\s*[}\]])", r"\1", text)          # remove trailing commas
-    # Add missing commas: line ending with a value followed by next key on a new line
-    text = re.sub(r'("|\d|true|false|null)([ \t]*\n[ \t]*")', r'\1,\2', text)
-    return json.loads(text)
+    text = text.lstrip("\ufeff")
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            value = pyjson5.decode(text)
+        except pyjson5.Json5DecoderException:
+            try:
+                value = pyjson5.decode(_repair_missing_commas(text))
+            except pyjson5.Json5DecoderException as exc:
+                raise ValueError(str(exc)) from exc
+    if not isinstance(value, dict):
+        raise ValueError("Expected a JSON object at the root")
+    return value
 
 
 def decode(raw: bytes) -> str:

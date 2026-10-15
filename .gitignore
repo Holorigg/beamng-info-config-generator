@@ -12,7 +12,7 @@ ENV/
 # Build / packaging output
 build/
 dist/
-*.spec
+beamng-infogen*.spec
 
 # Test / tooling caches
 .pytest_cache/
@@ -23,7 +23,9 @@ htmlcov/
 
 # Local application state
 .beamng_infogen.json
+.beamng_infogen.log*
 rename_info_configs.py
+CODEX_MEMORY.md
 
 # Local media / release prep
 screenshots/

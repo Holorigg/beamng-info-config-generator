@@ -9,6 +9,9 @@ from typing import Optional
 import json_utils
 from parser import parse_pc
 from generator import validate
+from storage import check_cancel
+
+MAX_METADATA_BYTES = 16 * 1024 * 1024
 
 
 @dataclass
@@ -25,17 +28,14 @@ class ConfigEntry:
     config_name: str
     auto_detected: dict
     thumbnail: Optional[bytes] = None
+    thumbnail_path: Optional[str] = None
+    parse_error: Optional[str] = None
 
 
 def _info_config_path(pc_path: Path) -> Path:
-    """Return the info_config path for a given .pc file.
-    Tries all naming conventions used across different mods:
-      info_config_{stem}.json  (standard BeamNG)
-      info_{stem}.json         (some mods omit '_config_')
-    Also strips a leading 'config_' from the pc stem if present.
-    """
+    """Prefer info_{PC stem}.json, retaining historical naming fallbacks."""
     stem = pc_path.stem
-    candidates = [f"info_config_{stem}.json", f"info_{stem}.json"]
+    candidates = [f"info_{stem}.json", f"info_config_{stem}.json"]
     if stem.lower().startswith("config_"):
         stripped = stem[len("config_"):]
         candidates += [f"info_config_{stripped}.json", f"info_{stripped}.json"]
@@ -48,13 +48,18 @@ def _info_config_path(pc_path: Path) -> Path:
     return pc_path.parent / candidates[0]  # fallback — caller checks existence
 
 
-def _scan_folder_mod(mod_root: Path) -> list[ConfigEntry]:
+def _scan_folder_mod(mod_root: Path, issues=None, cancel=None) -> list[ConfigEntry]:
     entries = []
-    for root, _dirs, files in os.walk(mod_root):
+    def on_error(exc):
+        if issues is not None:
+            issues.append(str(exc))
+    for root, _dirs, files in os.walk(mod_root, onerror=on_error):
+        check_cancel(cancel)
         for fname in sorted(files):
-            if not fname.endswith(".pc"):
+            check_cancel(cancel)
+            if not fname.lower().endswith(".pc"):
                 continue
-            if fname.endswith(".bak") or ".bak." in fname:
+            if ".bak." in fname.lower():
                 continue
 
             pc_path = Path(root) / fname
@@ -62,28 +67,35 @@ def _scan_folder_mod(mod_root: Path) -> list[ConfigEntry]:
             info_path = _info_config_path(pc_path)
 
             try:
+                if pc_path.stat().st_size > MAX_METADATA_BYTES:
+                    raise ValueError("Config exceeds the 16 MiB metadata limit")
                 pc_content = json_utils.load_file(pc_path)
-            except Exception:
+            except Exception as exc:
+                if issues is not None:
+                    issues.append(f"{pc_path}: {exc}")
                 continue
 
             auto = parse_pc(pc_content)
 
-            thumbnail = None
+            thumbnail_path = None
             for ext in ('.jpg', '.jpeg', '.png'):
                 img_path = pc_path.with_suffix(ext)
                 if img_path.exists():
-                    try:
-                        thumbnail = img_path.read_bytes()
-                    except Exception:
-                        pass
+                    thumbnail_path = str(img_path)
                     break
 
             if info_path.exists():
-                raw_bytes = info_path.read_bytes()
-                info_raw = json_utils.decode(raw_bytes)
+                info_raw = None
+                parse_error = None
                 try:
+                    if info_path.stat().st_size > MAX_METADATA_BYTES:
+                        raise ValueError("Info file exceeds the 16 MiB metadata limit")
+                    info_raw = json_utils.decode(info_path.read_bytes())
                     info_content = json_utils.loads(info_raw)
-                except Exception:
+                except Exception as exc:
+                    parse_error = str(exc)
+                    if issues is not None:
+                        issues.append(f"{info_path}: {exc}")
                     info_content = {}
                 missing = validate(info_content)
                 status = "ok" if not missing else "bad"
@@ -92,6 +104,7 @@ def _scan_folder_mod(mod_root: Path) -> list[ConfigEntry]:
                 info_content = None
                 missing      = []
                 status       = "missing"
+                parse_error  = None
 
             entries.append(ConfigEntry(
                 pc_path=str(pc_path),
@@ -99,19 +112,20 @@ def _scan_folder_mod(mod_root: Path) -> list[ConfigEntry]:
                 status=status,
                 source="folder",
                 source_path=str(mod_root),
-                pc_content=pc_content,
+                pc_content={},
                 info_content=info_content,
                 info_raw=info_raw,
                 missing_fields=missing,
                 config_name=config_name,
                 auto_detected=auto,
-                thumbnail=thumbnail,
+                thumbnail_path=thumbnail_path,
+                parse_error=parse_error,
             ))
 
     return entries
 
 
-def scan_mods_folder(mods_path: str) -> dict[str, list[ConfigEntry]]:
+def scan_mods_folder(mods_path: str, issues=None, progress=None, cancel=None) -> dict[str, list[ConfigEntry]]:
     """
     Scan a folder containing mods (zips and/or subfolders).
     Returns {mod_display_name: [ConfigEntry, ...]} — only mods with at least one .pc.
@@ -120,15 +134,76 @@ def scan_mods_folder(mods_path: str) -> dict[str, list[ConfigEntry]]:
 
     result: dict[str, list[ConfigEntry]] = {}
     mods_root = Path(mods_path)
+    check_cancel(cancel)
 
-    for item in sorted(mods_root.iterdir()):
-        if item.suffix.lower() == ".zip":
-            entries = scan_zip(item)
+    if not mods_root.is_dir():
+        raise ValueError("Select a valid mods directory")
+    items = []
+    visited_dirs = set()
+    discovered_roots = set()
+
+    def resolved_key(path):
+        try:
+            return os.path.normcase(str(path.resolve()))
+        except (OSError, RuntimeError):
+            return None
+
+    def discover(root):
+        for item in sorted(root.iterdir()):
+            check_cancel(cancel)
+            if item.is_dir():
+                key = resolved_key(item)
+                if key is None or key in visited_dirs:
+                    continue
+                visited_dirs.add(key)
+                if item.name.lower() in ("repo", "unpacked"):
+                    discover(item)
+                elif not item.name.startswith("."):
+                    if key not in discovered_roots:
+                        discovered_roots.add(key)
+                        items.append(item)
+            elif item.is_file() and item.suffix.lower() == ".zip":
+                if item.name.lower().endswith((".tmp.zip", ".backup.zip")) or item.name.startswith("."):
+                    continue
+                key = resolved_key(item)
+                if key is not None and key not in discovered_roots:
+                    discovered_roots.add(key)
+                    items.append(item)
+    if (mods_root / "vehicles").is_dir() or any(mods_root.glob("*.pc")):
+        items.append(mods_root)
+    else:
+        discover(mods_root)
+    for index, item in enumerate(items):
+        check_cancel(cancel)
+        name = str(item.relative_to(mods_root)) if item != mods_root else mods_root.name
+        if progress:
+            progress(index, len(items), name)
+        if item.is_file():
+            entries = scan_zip(item, issues=issues, cancel=cancel)
             if entries:
-                result[item.name] = entries
+                result[name] = entries
         elif item.is_dir():
-            entries = _scan_folder_mod(item)
+            entries = _scan_folder_mod(item, issues=issues, cancel=cancel)
             if entries:
-                result[item.name] = entries
+                result[name] = entries
+    if progress:
+        progress(len(items), len(items), "Scan complete")
 
     return result
+
+
+def load_thumbnail(entry: ConfigEntry) -> bytes:
+    if entry.thumbnail is not None:
+        return entry.thumbnail
+    if not entry.thumbnail_path:
+        return b""
+    if entry.source == "zip":
+        import zipfile
+        with zipfile.ZipFile(entry.source_path) as archive:
+            if archive.getinfo(entry.thumbnail_path).file_size > MAX_METADATA_BYTES:
+                raise ValueError("Thumbnail exceeds the 16 MiB limit")
+            return archive.read(entry.thumbnail_path)
+    path = Path(entry.thumbnail_path)
+    if path.stat().st_size > MAX_METADATA_BYTES:
+        raise ValueError("Thumbnail exceeds the 16 MiB limit")
+    return path.read_bytes()
