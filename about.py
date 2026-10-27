@@ -7,18 +7,19 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from i18n import t
 from ui_icons import app_icon, icon, resource_path
 
 APP_NAME = "BeamNG Info Config Generator"
 APP_AUTHOR = "Holorigg"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 PROJECT_URL = "https://github.com/Holorigg/beamng-info-config-generator"
 
 
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("About")
+        self.setWindowTitle(t("About"))
         self.setWindowIcon(app_icon())
         self.resize(560, 440)
         self.setMinimumSize(500, 400)
@@ -41,25 +42,25 @@ class AboutDialog(QDialog):
         body = QVBoxLayout(details)
         body.setContentsMargins(0, 18, 0, 0)
         body.setSpacing(12)
-        author = QLabel(f"Created by {APP_AUTHOR}")
+        author = QLabel(t("Created by {author}").format(author=APP_AUTHOR))
         author.setObjectName("aboutAuthor")
         author.setTextInteractionFlags(Qt.TextSelectableByMouse)
         body.addWidget(author)
-        version = QLabel(f"Version: {APP_VERSION}")
+        version = QLabel(t("Version: {version}").format(version=APP_VERSION))
         version.setObjectName("muted")
         body.addWidget(version)
-        body.addWidget(QLabel("MIT License"))
-        credit = QLabel("Icons by Lucide and Feather (ISC / MIT).")
+        body.addWidget(QLabel(t("MIT License")))
+        credit = QLabel(t("Icons by Lucide and Feather (ISC / MIT)."))
         credit.setObjectName("muted")
         body.addWidget(credit)
-        note = QLabel("Independent project. Not affiliated with BeamNG.")
+        note = QLabel(t("Independent project. Not affiliated with BeamNG."))
         note.setWordWrap(True)
         note.setObjectName("muted")
         body.addWidget(note)
         body.addStretch()
         links = QHBoxLayout()
         for label, name, url in (("GitHub", "external-link", PROJECT_URL),
-                                 ("Report an issue", "bug", f"{PROJECT_URL}/issues")):
+                                 (t("Report an issue"), "bug", f"{PROJECT_URL}/issues")):
             button = QPushButton(label)
             button.setIcon(icon(name))
             button.setIconSize(QSize(18, 18))
@@ -68,7 +69,7 @@ class AboutDialog(QDialog):
             links.addWidget(button)
         links.addStretch()
         body.addLayout(links)
-        tabs.addTab(details, "About")
+        tabs.addTab(details, t("About"))
         licenses = QTextEdit()
         licenses.setObjectName("aboutLicenses")
         licenses.setReadOnly(True)
@@ -77,10 +78,10 @@ class AboutDialog(QDialog):
             "\n\nLUCIDE / FEATHER ICONS\n\n" +
             resource_path("icons", "lucide", "LICENSE").read_text(encoding="utf-8")
         )
-        tabs.addTab(licenses, "Licenses")
+        tabs.addTab(licenses, t("Licenses"))
         footer = QHBoxLayout()
         footer.addStretch()
-        close = QPushButton("Close")
+        close = QPushButton(t("Close"))
         close.setIcon(icon("x"))
         close.setIconSize(QSize(18, 18))
         close.clicked.connect(self.accept)

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.3.0 - 2026-10-27
+
+### Added
+
+- RLS Contracts supports RLS Career Overhaul 2.8 (BeamNG 0.40), which moved its contract files to a new `overhaul` layout. RLS 2.7 installations keep working unchanged; the addon detects which layout is installed.
+- Editor fields for `InsuranceClass` (career insurance tier) and `Years`. Clearing them removes the keys.
+- Analyze warns about values written by earlier versions that BeamNG 0.40 does not use, such as Induction `Natural`.
+- Stock vehicle data: the game installation is found through Steam libraries, or chosen in Settings when it is not found. **From stock** fills the form with a stock model's typical price, power, torque, weight, years, body style, region, paint, and insurance class. Generation and Fix use the same data for mods based on stock models (can be turned off).
+- Preview before bulk writes: Generate and Fix show every file and changed field, can be limited to the configurations shown by search and filters, and offer backups.
+- Editor fields for `Region`, `Population`, and the default paint.
+- Optional Russian interface in Settings. English remains the default.
+
+### Changed
+
+- Field choices follow BeamNG 0.40 stock vehicles: Induction `NA`/`Turbo`/`SC`/`Turbo + N2O`/`SC + N2O`, Fuel `Battery` for electric vehicles, plus the stock Config Type, Drivetrain, Transmission, and Body Style values. Choice fields accept custom values. Existing files are never rewritten silently.
+- Redesigned interface: grouped Details form, status chips, neutral list with status icons, status badge, a vehicle-selector style Preview, and clearer RLS Contracts status cells.
+- Compact form that reflows into one to three columns, an empty state with the detected mods folder, problem counts per mod, and notifications instead of status-bar text. A one-time notice suggests turning on backups.
+- The main window was split into smaller modules (`widgets`, `dialogs`, `editor_form`, `vocabulary`).
+
 ## v1.2.0 - 2026-10-15
 
 - Added RLS Contracts diagnostics grouped by vehicle model, with Drift, Drag, and Race eligibility checks.

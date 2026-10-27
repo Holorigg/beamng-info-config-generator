@@ -11,6 +11,18 @@ from pathlib import Path
 import tempfile
 
 
+def install_qt_translation(app):
+    """Translate Qt's own dialog buttons when the saved language is not English."""
+    from PySide6.QtCore import QLibraryInfo, QTranslator
+    import app as app_module
+    language = app_module._load_settings().get("language", "en")
+    if language == "en":
+        return
+    translator = QTranslator(app)
+    if translator.load(f"qtbase_{language}", QLibraryInfo.path(QLibraryInfo.TranslationsPath)):
+        app.installTranslator(translator)
+
+
 def smoke_check():
     import json_utils
     from scanner import scan_mods_folder
@@ -86,6 +98,7 @@ def main():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Holorigg.BeamNGInfoConfigGenerator")
     app.setStyle("Fusion")
     app.setStyleSheet(make_dark_style())
+    install_qt_translation(app)
     fatal_errors = []
     def report_error(exc_type, exc_value, exc_traceback):
         fatal_errors.append(str(exc_value))

@@ -35,6 +35,10 @@ class UiTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.settings_patch = patch.object(app_module, "SETTINGS_FILE", self.root / "settings.json")
         self.settings_patch.start()
+        # Bulk previews are modal; accept them unchanged in tests.
+        self.bulk_patch = patch.object(app_module, "confirm_bulk",
+                                       side_effect=lambda _parent, _title, pairs, *args: (pairs, False))
+        self.bulk_preview = self.bulk_patch.start()
         folder = self.root / "mods" / "example" / "vehicles" / "car"
         folder.mkdir(parents=True)
         for name in ("touring", "base", "race"):
@@ -57,6 +61,7 @@ class UiTests(unittest.TestCase):
         self.window.close()
         self.qt.processEvents()
         self.settings_patch.stop()
+        self.bulk_patch.stop()
         self.temp.cleanup()
 
     def activate(self, name="touring"):
@@ -238,6 +243,29 @@ class UiTests(unittest.TestCase):
         self.assertEqual(Path(self.entries["race"].info_path).name, "info_race.json")
         rescanned = scan_mods_folder(str(self.root / "mods"))
         self.assertEqual(next(e for es in rescanned.values() for e in es if e.config_name == "race").status, "ok")
+
+    def test_bulk_preview_scope_backup_and_cancel(self):
+        from dialogs import BulkPreviewDialog, describe_change
+        base, race = self.entries["base"], self.entries["race"]
+        self.assertEqual(describe_change(race, {"Value": 1})[0], "Create")
+        self.assertEqual(describe_change(base, {"Value": 5000}), ("Update", ["Value"]))
+        pairs = [(base, {"Value": 5000}), (race, {"Value": 1})]
+        dialog = BulkPreviewDialog(self.window, "Preview", pairs, {id(race)}, backup=False)
+        self.assertEqual(dialog.table.rowCount(), 2)
+        self.assertTrue(dialog.backup_note.isVisibleTo(dialog))
+        dialog.only_visible.setChecked(True)
+        self.assertEqual(dialog.selected_pairs(), [pairs[1]])
+        self.assertEqual(dialog.confirm.text(), "Write 1 file")
+        dialog.close()
+        self.bulk_preview.side_effect = lambda *args: None
+        before = race.status
+        self.window._generate_all_missing()
+        self.assertEqual(race.status, before)
+
+    def test_bulk_preview_backup_choice_is_saved(self):
+        self.bulk_preview.side_effect = lambda _parent, _title, pairs, *args: (pairs, True)
+        self.window._generate_all_missing()
+        self.assertTrue(json.loads((self.root / "settings.json").read_text())["backup_writes"])
 
     def test_fix_selected_bad_info_uses_positive_defaults(self):
         self.activate("base")

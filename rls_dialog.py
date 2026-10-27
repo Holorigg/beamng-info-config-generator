@@ -2,17 +2,20 @@
 
 import traceback
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit,
     QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
     QWidget,
 )
 
+from theme import COLORS
+from i18n import t
 from ui_icons import icon
+from widgets import label, make_button, pill, set_tone
 from workers import TaskDialog
 
-from rls_contracts import collect_models, diagnose, discover_rls
+from rls_contracts import KNOWN_POOL_HASHES, collect_models, diagnose, discover_rls
 from rls_patch import install_patch, read_patch, set_patch_enabled
 
 
@@ -21,6 +24,49 @@ def _item(text, align=None):
     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
     if align is not None:
         item.setTextAlignment(align)
+    return item
+
+
+def _status_icon(text):
+    value = text.casefold()
+    if value.startswith("in pool"):
+        return "circle-check", COLORS["ok"]
+    if value.startswith("not in pool"):
+        return "circle-dashed", COLORS["muted"]
+    if value.startswith(("blacklisted", "excluded")):
+        return "ban", COLORS["danger"]
+    if value.startswith(("needs", "config type")):
+        return "triangle-alert", COLORS["warn"]
+    return None
+
+
+# Diagnosis and note phrases produced by rls_contracts, translated only for display.
+_PHRASES = (
+    "RLS rules unverified estimate", "RLS version warning", "Config type unverified", "Not in pool",
+    "In pool", "Blacklisted", "Excluded model", "Excluded",
+    "Model info missing; common for vanilla-based configuration packs",
+    "Found in multiple archives; effective override precedence is uncertain",
+    "Vehicle pool hash is not a verified RLS rule source",
+    "Version is unknown or differs from the verified RLS versions",
+)
+
+
+def _display(text):
+    text = str(text or "")
+    if text.startswith("Needs ") and text.split(" (")[0].endswith(" config"):
+        base, _, rest = text.partition(" (")
+        text = t("Needs {types} config").format(types=base[6:-7]) + (" (" + rest if rest else "")
+    for phrase in _PHRASES:
+        if phrase in text:
+            text = text.replace(phrase, t(phrase))
+    return text
+
+
+def _status_item(text):
+    found = _status_icon(str(text or ""))
+    item = _item(_display(text))
+    if found:
+        item.setIcon(icon(*found))
     return item
 
 
@@ -39,7 +85,7 @@ class ContractsDialog(QDialog):
         self._restart_required = False
         self._busy_dialog = None
 
-        self.setWindowTitle("RLS Contracts")
+        self.setWindowTitle(t("RLS Contracts"))
         self.setMinimumSize(960, 600)
         self.resize(1120, 700)
         root = QVBoxLayout(self)
@@ -47,40 +93,47 @@ class ContractsDialog(QDialog):
         root.setSpacing(12)
 
         header = QHBoxLayout()
-        heading = QLabel("RLS Contracts")
-        heading.setObjectName("sectionTitle")
-        header.addWidget(heading)
-        header.addStretch(1)
-        header.addWidget(QLabel("Installed RLS"))
+        header.setSpacing(10)
+        titles = QVBoxLayout()
+        titles.setSpacing(2)
+        titles.addWidget(label(t("RLS Contracts"), "sectionTitle"))
+        titles.addWidget(label(t("Which vehicle models can appear in random Drift, Drag and Race contracts. "
+                               "Supports RLS 2.7 and 2.8."), "muted", wrap=True))
+        header.addLayout(titles, 1)
+        header.addWidget(label(t("Installed RLS"), "fieldLabel"))
         self.installation_selector = QComboBox()
         self.installation_selector.setMinimumWidth(290)
         self.installation_selector.setEnabled(False)
         self.installation_selector.currentIndexChanged.connect(self._select_installation)
         header.addWidget(self.installation_selector)
-        self.refresh_button = QPushButton("Refresh")
-        self.refresh_button.setIcon(icon("refresh-cw"))
-        self.refresh_button.setIconSize(QSize(18, 18))
-        self.refresh_button.clicked.connect(self.refresh)
+        self.refresh_button = make_button(t("Refresh"), "refresh-cw", self.refresh)
         header.addWidget(self.refresh_button)
         root.addLayout(header)
 
-        self.installation_status = QLabel("Detecting installed RLS...")
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        self.rules_pill = pill("", "neutral")
+        self.rules_pill.hide()
+        status_row.addWidget(self.rules_pill)
+        self.installation_status = QLabel(t("Detecting installed RLS..."))
         self.installation_status.setObjectName("muted")
         self.installation_status.setWordWrap(True)
-        root.addWidget(self.installation_status)
+        status_row.addWidget(self.installation_status, 1)
+        root.addLayout(status_row)
 
         controls = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search models and notes")
+        self.search.setPlaceholderText(t("Search models and notes"))
         self.search.setClearButtonEnabled(True)
+        self.search.addAction(icon("search", COLORS["muted"]), QLineEdit.LeadingPosition)
         self.search.textChanged.connect(self._filter_rows)
         controls.addWidget(self.search, 1)
-        self.select_visible = QPushButton("Select all visible")
-        self.select_visible.setIcon(icon("list-tree"))
+        self.select_visible = QPushButton(t("Select all visible"))
+        self.select_visible.setIcon(icon("check"))
         self.select_visible.clicked.connect(self._toggle_visible)
         controls.addWidget(self.select_visible)
         root.addLayout(controls)
-        self.models_status = QLabel("Scanning model configs...")
+        self.models_status = QLabel(t("Scanning model configs..."))
         self.models_status.setObjectName("muted")
         root.addWidget(self.models_status)
         self.preserved_status = QLabel("")
@@ -89,10 +142,12 @@ class ContractsDialog(QDialog):
         root.addWidget(self.preserved_status)
 
         self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(("", "Model", "Drift", "Drag", "Race", "Config types", "Notes"))
+        self.table.setHorizontalHeaderLabels(
+            ("", t("Model"), "Drift", "Drag", "Race", t("Config types"), t("Notes")))
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
         self.table.setColumnWidth(0, 34)
         self.table.setColumnWidth(1, 230)
@@ -105,19 +160,19 @@ class ContractsDialog(QDialog):
         root.addWidget(self.table, 1)
 
         footer = QHBoxLayout()
-        self.patch_status = QLabel("Managed patch: checking...")
+        self.patch_status = QLabel(t("Managed patch: checking..."))
         self.patch_status.setObjectName("muted")
         footer.addWidget(self.patch_status, 1)
-        self.patch_toggle = QPushButton("Disable patch")
-        self.patch_toggle.setIcon(icon("wrench"))
+        self.patch_toggle = QPushButton(t("Disable patch"))
+        self.patch_toggle.setIcon(icon("package"))
         self.patch_toggle.clicked.connect(self._toggle_patch)
         footer.addWidget(self.patch_toggle)
-        self.apply_button = QPushButton("Apply patch")
+        self.apply_button = QPushButton(t("Apply patch"))
         self.apply_button.setObjectName("primary")
         self.apply_button.setIcon(icon("save"))
         self.apply_button.clicked.connect(self._apply_patch)
         footer.addWidget(self.apply_button)
-        close = QPushButton("Close")
+        close = QPushButton(t("Close"))
         close.setIcon(icon("x"))
         close.clicked.connect(self.accept)
         footer.addWidget(close)
@@ -144,7 +199,7 @@ class ContractsDialog(QDialog):
         if hasattr(self, "_row_keys"):
             self._sync_all_selected()
         self.refresh_button.setEnabled(False)
-        self.installation_status.setText("Scanning RLS and vehicle configs...")
+        self.installation_status.setText(t("Scanning RLS and vehicle configs..."))
 
         def task(cancel, progress):
             progress(0, 3, "Detecting installed RLS")
@@ -156,7 +211,7 @@ class ContractsDialog(QDialog):
             patch = read_patch(self.mods_path)
             diagnoses = {}
             for index, installation in enumerate(installations):
-                progress(index + 1, max(1, len(installations)), f"Diagnosing RLS {installation.version}")
+                progress(index + 1, max(1, len(installations)), t("Diagnosing RLS {version}").format(version=installation.version))
                 diagnoses[installation.path] = diagnose(
                     installation, models,
                     patched_models=(patch or {}).get("models", ()) if patch and patch.get("enabled") else (),
@@ -171,11 +226,11 @@ class ContractsDialog(QDialog):
             self.installation_selector.blockSignals(True)
             self.installation_selector.clear()
             for installation in self.installations:
-                rule_status = "verified rules" if installation.supported else "unverified rules"
+                rule_status = t("verified rules") if installation.supported else t("unverified rules")
                 version = installation.version or "unknown"
                 index = self.installation_selector.count()
                 self.installation_selector.addItem(f"RLS {version} ({rule_status})", installation.path)
-                tooltip = installation.issue or f"Rules verified against RLS {version}."
+                tooltip = _display(installation.issue) or t("Rules verified against RLS {version}.").format(version=version)
                 self.installation_selector.setItemData(index, tooltip, Qt.ToolTipRole)
             self.installation_selector.setEnabled(bool(self.installations))
             self.installation_selector.blockSignals(False)
@@ -190,27 +245,37 @@ class ContractsDialog(QDialog):
 
     def _render(self):
         if self.installation:
-            rule_status = "Verified rules" if self.installation.supported else "Unverified rules"
-            self.installation_status.setText(f"{rule_status} | RLS {self.installation.version or 'unknown'}")
+            rule_status = t("Verified rules") if self.installation.supported else t("Unverified rules")
+            self.rules_pill.setText(rule_status)
+            set_tone(self.rules_pill, "ok" if self.installation.supported and not self.installation.issue else "bad")
+            self.rules_pill.show()
+            layout_name = getattr(getattr(self.installation, "layout", None), "name", "")
+            details = [f"RLS {self.installation.version or 'unknown'}"]
+            if layout_name:
+                details.append(t("{layout} file layout").format(layout=layout_name))
+            if self.installation.issue:
+                details.append(_display(self.installation.issue))
+            self.installation_status.setText("  ·  ".join(details))
             self.installation_status.setToolTip(
                 f"Path: {self.installation.path}\nVehicle pool SHA-256: {self.installation.pool_hash}\n"
                 f"{self.installation.issue or ''}"
             )
         else:
-            self.installation_status.setText("No installed RLS archive was detected.")
+            self.rules_pill.hide()
+            self.installation_status.setText(t("No installed RLS archive was detected."))
             self.installation_status.setToolTip("")
 
         old_keys = set((self.patch or {}).get("models", ()))
         preserved = sorted(old_keys - {model.key for model in self.models})
         self.preserved_status.setText(
-            f"Preserving {len(preserved)} patched model(s) not present in this scan."
+            t("Preserving {count} patched model(s) not present in this scan.").format(count=len(preserved))
             if preserved else ""
         )
         self.preserved_status.setToolTip("\n".join(preserved))
         self.preserved_status.setVisible(bool(preserved))
         self.models_status.setText(
-            f"{len(self.models)} models found" if self.models else
-            "No model entries found. Scan the mods folder first."
+            t("{count} models found").format(count=len(self.models)) if self.models else
+            t("No model entries found. Scan the mods folder first.")
         )
         self.table.setRowCount(len(self.models))
         self._row_keys = []
@@ -222,6 +287,7 @@ class ContractsDialog(QDialog):
             check.setEnabled(not model.excluded)
             check.stateChanged.connect(lambda _state, model_key=key: self._sync_selected(model_key))
             cell = QWidget()
+            cell.setStyleSheet("background: transparent;")
             cell_layout = QHBoxLayout(cell)
             cell_layout.setContentsMargins(0, 0, 0, 0)
             cell_layout.setAlignment(Qt.AlignCenter)
@@ -230,14 +296,17 @@ class ContractsDialog(QDialog):
             diagnosis = next((item for item in self.diagnoses.get(self.installation.path, ())
                               if item.model.key == key), None) if self.installation else None
             model_item = _item(key)
-            model_item.setToolTip("Sources:\n" + ("\n".join(model.sources) or "No source path recorded"))
+            font = model_item.font()
+            font.setWeight(font.Weight.DemiBold)
+            model_item.setFont(font)
+            model_item.setToolTip(t("Sources:\n") + ("\n".join(model.sources) or "No source path recorded"))
             self.table.setItem(row, 1, model_item)
-            self.table.setItem(row, 2, _item(self._diag_value(diagnosis, "drift")))
-            self.table.setItem(row, 3, _item(self._diag_value(diagnosis, "drag")))
+            self.table.setItem(row, 2, _status_item(self._diag_value(diagnosis, "drift")))
+            self.table.setItem(row, 3, _status_item(self._diag_value(diagnosis, "drag")))
             race = self._diag_value(diagnosis, "race")
-            self.table.setItem(row, 4, _item(race))
+            self.table.setItem(row, 4, _status_item(race))
             self.table.setItem(row, 5, _item(", ".join(model.config_types)))
-            note = model.issue or ("Excluded" if model.excluded else "")
+            note = _display(model.issue or ("Excluded" if model.excluded else ""))
             if diagnosis and getattr(diagnosis, "issue", ""):
                 note = "; ".join(filter(None, (note, diagnosis.issue)))
             self.table.setItem(row, 6, _item(note))
@@ -245,10 +314,10 @@ class ContractsDialog(QDialog):
                 item = self.table.item(row, column)
                 if column != 1:
                     item.setToolTip(item.text())
-            self.table.setRowHeight(row, 44)
+            self.table.setRowHeight(row, 38)
         self.table.resizeRowsToContents()
         for row in range(self.table.rowCount()):
-            self.table.setRowHeight(row, max(44, self.table.rowHeight(row)))
+            self.table.setRowHeight(row, max(38, self.table.rowHeight(row)))
         self._filter_rows(self.search.text())
         self._update_patch_controls()
         self.apply_button.setEnabled(bool(
@@ -307,19 +376,19 @@ class ContractsDialog(QDialog):
     def _update_patch_controls(self):
         exists = self.patch is not None
         enabled = bool((self.patch or {}).get("enabled", False))
-        status = "enabled" if enabled else "disabled" if exists else "not installed"
+        status = t("enabled") if enabled else t("disabled") if exists else t("not installed")
         if self._restart_required:
-            status += "; Applied; restart BeamNG"
-        self.patch_status.setText("Managed patch: " + status)
-        self.patch_toggle.setText("Disable patch" if enabled else "Enable patch")
+            status += "; " + t("applied, restart BeamNG")
+        self.patch_status.setText(t("Managed patch: ") + status)
+        self.patch_toggle.setText(t("Disable patch") if enabled else t("Enable patch"))
         self.patch_toggle.setEnabled(exists)
 
     def _apply_patch(self):
         if not self.models:
-            QMessageBox.warning(self, "Apply patch", "No model entries found. Scan the mods folder first.")
+            QMessageBox.warning(self, t("Apply patch"), t("No model entries found. Scan the mods folder first."))
             return
         if not self.installation or not isinstance(self.installation.config, dict):
-            QMessageBox.warning(self, "Apply patch", "A valid RLS installation and patch backend are required.")
+            QMessageBox.warning(self, t("Apply patch"), t("A valid RLS installation and patch backend are required."))
             return
         self._sync_all_selected()
         scanned = set(self._row_keys)
@@ -327,20 +396,22 @@ class ContractsDialog(QDialog):
         preserved = previous - scanned
         keys = sorted((self.selected_keys & scanned) | preserved)
         if not keys:
-            QMessageBox.warning(self, "Apply patch", "Select at least one vehicle model.")
+            QMessageBox.warning(self, t("Apply patch"), t("Select at least one vehicle model."))
             return
         shown = keys[:20]
         names = "\n".join(f"  {key}" for key in shown)
         if len(keys) > len(shown):
-            names += f"\n  ... and {len(keys) - len(shown)} more"
-        unverified = not self.installation.supported or self.installation.version != "2.7.2"
-        warning = "\n\nWarning: this version or contract hash is unverified." if unverified else ""
+            names += "\n  " + t("... and {count} more").format(count=len(keys) - len(shown))
+        unverified = (not self.installation.supported
+                      or self.installation.version not in KNOWN_POOL_HASHES.values())
+        warning = "\n\n" + t("Warning: this version or contract hash is unverified.") if unverified else ""
         if preserved:
-            warning += f"\n\n{len(preserved)} existing model(s) absent from this scan will be preserved."
+            warning += "\n\n" + t("{count} existing model(s) absent from this scan will be preserved.").format(
+                count=len(preserved))
         answer = QMessageBox.question(
-            self, "Apply managed patch",
-            f"Replace the managed selection with {len(keys)} model(s)?\n\n{names}{warning}\n\n"
-            "Restart BeamNG after changes.",
+            self, t("Apply managed patch"),
+            t("Replace the managed selection with {count} model(s)?").format(count=len(keys))
+            + f"\n\n{names}{warning}\n\n" + t("Restart BeamNG after changes."),
             QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
         )
         if answer != QMessageBox.Yes:
@@ -350,26 +421,27 @@ class ContractsDialog(QDialog):
             progress(0, 1, "Applying managed patch")
             return install_patch(self.mods_path, self.installation, keys)
 
-        self._run_task("Apply managed patch", task, self._patch_applied)
+        self._run_task(t("Apply managed patch"), task, self._patch_applied)
 
     def _toggle_patch(self):
         if self.patch is None:
             return
         enabled = not bool(self.patch.get("enabled", False))
-        verb = "Enable" if enabled else "Disable"
+        title = t("Enable managed patch") if enabled else t("Disable managed patch")
         answer = QMessageBox.question(
-            self, f"{verb} managed patch",
-            f"{verb} the managed RLS patch?\n\nRestart BeamNG after changes.",
+            self, title,
+            (t("Enable the managed RLS patch?") if enabled else t("Disable the managed RLS patch?"))
+            + "\n\n" + t("Restart BeamNG after changes."),
             QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
         )
         if answer != QMessageBox.Yes:
             return
 
         def task(_cancel, progress):
-            progress(0, 1, f"{verb}ing managed patch")
+            progress(0, 1, title)
             return set_patch_enabled(self.mods_path, enabled)
 
-        self._run_task(f"{verb} managed patch", task, self._patch_applied)
+        self._run_task(title, task, self._patch_applied)
 
     def _patch_applied(self, _result):
         self._restart_required = True

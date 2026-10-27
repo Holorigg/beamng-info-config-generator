@@ -50,6 +50,6 @@ def _detect_fuel(parts: dict) -> str:
         kl, vl = key.lower(), val.lower()
         if "engine" in kl or "exhaust" in kl or "intake" in kl:
             if "diesel"   in vl: return "Diesel"
-            if "electric" in vl: return "Electric"
-            if "hybrid"   in vl: return "Hybrid"
+            # BeamNG 0.40 stock files call electric vehicles "Battery"; hybrids stay Gasoline.
+            if "electric" in vl: return "Battery"
     return "Gasoline"

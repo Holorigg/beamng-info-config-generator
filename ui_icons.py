@@ -1,5 +1,6 @@
 """Render vendored Lucide SVGs with consistent colors and HiDPI sizes."""
 
+import tempfile
 from functools import lru_cache
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -38,3 +39,14 @@ def icon(name, color="#dce3e7"):
             painter.end()
             result.addPixmap(pixmap, mode)
     return result
+
+
+@lru_cache(maxsize=64)
+def icon_file(name, color, size=16):
+    """Render a tinted icon to a cached PNG so stylesheets can reference it."""
+    folder = Path(tempfile.gettempdir()) / "beamng-infogen-icons"
+    folder.mkdir(exist_ok=True)
+    target = folder / f"{name}-{color.strip('#')}-{size}.png"
+    if not icon(name, color).pixmap(size * 2, size * 2).save(str(target)):
+        raise OSError(f"Icon could not be written: {target}")
+    return target.as_posix()

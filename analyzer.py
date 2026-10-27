@@ -4,6 +4,7 @@ Analyze mods_data and report why configs may not appear in the dealer.
 from pathlib import Path
 
 from generator import validate
+from vocabulary import LEGACY_VALUES
 
 
 def analyze(mods_data: dict) -> dict:
@@ -35,6 +36,12 @@ def analyze(mods_data: dict) -> dict:
                                  if not data.get(k)]
                 if stats_missing:
                     warnings.append(f"Stats not filled: {', '.join(stats_missing)}")
+
+                for field, renames in LEGACY_VALUES.items():
+                    value = data.get(field)
+                    if isinstance(value, str) and value in renames:
+                        warnings.append(f"{field} \"{value}\" is not a BeamNG 0.40 value; "
+                                        f"the game uses \"{renames[value]}\"")
 
                 if entry.info_path:
                     fname = Path(entry.info_path).name

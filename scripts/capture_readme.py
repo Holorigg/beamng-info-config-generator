@@ -98,15 +98,39 @@ def main():
             image.save(args.output / "app-overview.png", optimize=True)
             errors = []
             def settings_capture():
+                from PySide6.QtWidgets import QLineEdit
                 dialog = qt.activeModalWidget()
                 try:
-                    capture(dialog).save(args.output / "zip-settings.png", optimize=True)
+                    image = capture(dialog)
+                    # The game folder is a local path.
+                    for edit in dialog.findChildren(QLineEdit):
+                        obscure_widget(image, dialog, edit, 4)
+                    image.save(args.output / "zip-settings.png", optimize=True)
                 except Exception as exc:
                     errors.append(exc)
                 finally:
                     dialog.reject()
             QTimer.singleShot(100, settings_capture)
             window._show_settings()
+            # Bulk preview of a Fix run; cancelled, so nothing is written.
+            from dialogs import BulkPreviewDialog
+            from generator import fix
+            pairs = [(e, fix(e.info_content or {}, e.config_name, e.auto_detected, window._editor_defaults()))
+                     for group in data.values() for e in group if e.status == "bad" and not e.parse_error]
+            if pairs:
+                preview = BulkPreviewDialog(window, "Fix incomplete info files", pairs[:40], backup=False)
+                preview.resize(900, 560)
+                preview.show()
+                qt.processEvents()
+                image = capture(preview)
+                origin = preview.table.viewport().mapTo(preview, QPoint(0, 0))
+                header = preview.table.horizontalHeader()
+                for column in (0, 1):
+                    left = origin.x() + header.sectionViewportPosition(column) + (24 if column == 0 else 0)
+                    obscure(image, (left, origin.y(), origin.x() + header.sectionViewportPosition(column)
+                                    + header.sectionSize(column), origin.y() + preview.table.viewport().height()))
+                image.save(args.output / "bulk-preview.png", optimize=True)
+                preview.reject()
             window.close()
             if errors:
                 raise errors[0]
@@ -126,7 +150,7 @@ def main():
                 obscure_widget(image, contracts, contracts.preserved_status)
             image.save(args.output / "rls-contracts.png", optimize=True)
             contracts.close()
-    print(f"Saved three redacted screenshots ({sum(map(len, data.values()))} real configurations scanned)")
+    print(f"Saved redacted screenshots ({sum(map(len, data.values()))} real configurations scanned)")
 
 
 if __name__ == "__main__":

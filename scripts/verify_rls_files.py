@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import json_utils
+from rls_contracts import LAYOUTS, OVERHAUL_LAYOUT
 from rls_patch import LUA_EXTENSION, OWNER
 
 
@@ -22,9 +23,16 @@ def check(rls_path, vehicles_path=None):
     from lupa.lua51 import LuaRuntime
 
     with zipfile.ZipFile(rls_path) as archive:
-        config_source = archive.read("lua/ge/extensions/gameplay/fre/config.lua").decode("utf-8-sig")
-        pool_bytes = archive.read("lua/ge/extensions/gameplay/events/freContracts/vehiclePool.lua")
-        raw = json_utils.load_bytes(archive.read("gameplay/fre/freProgression.config.json"))
+        names = set(archive.namelist())
+        layout = next((item for item in LAYOUTS if item.pool in names), None)
+        if layout is None:
+            raise SystemExit("No known RLS contract layout in this archive")
+        config_source = archive.read(layout.config_lua).decode("utf-8-sig")
+        pool_bytes = archive.read(layout.pool)
+        raw = json_utils.load_bytes(archive.read(layout.progression))
+    # 2.8 renamed the inventory module and requires its helpers instead of a global.
+    inventory = ("overhaul_career_garage_inventory" if layout is OVERHAUL_LAYOUT
+                 else "career_modules_inventory")
     configured = raw.get("contractVehicleModels", [])
     models = {}
     stock = {}
@@ -68,17 +76,22 @@ def check(rls_path, vehicles_path=None):
                 "models": [*additions, "infogen_test_trailer"]}
     lua.jsonReadFile = lambda path: to_lua(manifest if "infogen_rls" in path else raw)
     lua.log = lambda *_: None
-    lua.FS = runtime.eval("{fileExists = function() return true end}")
+    lua.config_file = "/" + layout.config_lua
+    # Only the inspected layout's config exists, so the addon must pick the right module.
+    lua.FS = runtime.eval(
+        "{fileExists = function(_, path) return path == config_file or path:find('infogen_rls') ~= nil end}")
     lua.core = to_lua({"getModelList": lambda: to_lua({"models": models})})
-    lua.career_modules_inventory = to_lua({"getVehicles": lambda: to_lua({})})
+    lua[inventory] = to_lua({"getVehicles": lambda: to_lua({})})
     runtime.execute('package.preload["core/vehicles"] = function() return core end')
     lua.config_source = config_source
-    runtime.execute('package.preload["gameplay/fre/config"] = assert(loadstring(config_source))')
-    config = runtime.eval('require("gameplay/fre/config")')
+    lua.config_module = layout.config_module
+    runtime.execute('package.preload[config_module] = assert(loadstring(config_source))')
+    config = runtime.eval('require(config_module)')
+    helpers = runtime.eval("{pickRandomFromList = function(list) return list[math.random(#list)] end}")
+    lua.gameplay_events_freContracts_helpers = helpers
+    lua.fre_helpers = helpers
+    runtime.execute('package.preload["overhaul/events/fre/helpers"] = function() return fre_helpers end')
     pool = runtime.execute(pool_bytes.decode("utf-8-sig"))
-    lua.gameplay_events_freContracts_helpers = runtime.eval(
-        "{pickRandomFromList = function(list) return list[math.random(#list)] end}"
-    )
 
     def picks(discipline):
         runtime.execute("math.randomseed(111)")
@@ -97,11 +110,11 @@ def check(rls_path, vehicles_path=None):
     assert "infogen_test_factory" not in after["roadracing"], "Race whitelist was bypassed"
     assert all("infogen_test_trailer" not in values for values in after.values())
     assert list(config.getConfig().contractVehicleModels.values()) == original, "Base config mutated"
-    lua.career_modules_inventory = to_lua({
+    lua[inventory] = to_lua({
         "getVehicles": lambda: to_lua({1: {"model": "infogen_test_factory"}})
     })
     assert pool.isModelAllowedForDiscipline("roadracing", "infogen_test_factory"), "Owned exemption changed"
-    lua.career_modules_inventory = to_lua({"getVehicles": lambda: to_lua({})})
+    lua[inventory] = to_lua({"getVehicles": lambda: to_lua({})})
     extension.onExtensionUnloaded()
     assert list(config.getContractVehicleModels().values()) == original, "Unload did not restore base"
     restored = {d: picks(d) for d in before}
@@ -122,6 +135,7 @@ def check(rls_path, vehicles_path=None):
     assert "infogen_test_race" not in picks("drift"), "Discipline blacklist was bypassed"
     assert "infogen_test_race" in picks("drag"), "Blacklist leaked into other disciplines"
     return {"rlsArchive": Path(rls_path).name,
+            "layout": layout.name,
             "vehiclePoolSha256": hashlib.sha256(pool_bytes).hexdigest(),
             "checks": "Lua 5.1, 2000 seeded picks per discipline before/after/unload; no game launch",
             "stockConfigTypes": stock,

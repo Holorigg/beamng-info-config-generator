@@ -14,8 +14,43 @@ from storage import check_cancel
 
 MAX_METADATA_BYTES = 16 * 1024 * 1024
 KNOWN_POOL_SHA256 = "3623b1f4d275c27e11fbd730ddd0ca013e38160692c3885ab38dd3e5f4b1cf31"
-PROGRESSION_PATH = "gameplay/fre/freProgression.config.json"
-POOL_PATH = "lua/ge/extensions/gameplay/events/freContracts/vehiclePool.lua"
+# Vehicle-pool rule sources whose selection logic was inspected, by RLS version.
+KNOWN_POOL_HASHES = {
+    KNOWN_POOL_SHA256: "2.7.2",
+    "40059b2ed44e32f44300cb8905eabd92fc47778f529b0607b108c0cbb0309dd4": "2.8.0",
+}
+
+
+@dataclass(frozen=True)
+class RlsLayout:
+    """File locations of one RLS generation; the contract rules are the same."""
+    name: str
+    progression: str
+    pool: str
+    config_lua: str
+    config_module: str
+    version_file: str = ""
+
+
+LEGACY_LAYOUT = RlsLayout(
+    "2.7",
+    "gameplay/fre/freProgression.config.json",
+    "lua/ge/extensions/gameplay/events/freContracts/vehiclePool.lua",
+    "lua/ge/extensions/gameplay/fre/config.lua",
+    "gameplay/fre/config",
+)
+# RLS 2.8 (BeamNG 0.40) moved everything under the overhaul namespace.
+OVERHAUL_LAYOUT = RlsLayout(
+    "2.8",
+    "gameplay/overhaul/fre/freProgression.config.json",
+    "lua/ge/extensions/overhaul/events/fre/vehiclePool.lua",
+    "lua/ge/extensions/overhaul/events/freConfig.lua",
+    "overhaul/events/freConfig",
+    "gameplay/overhaul/version.json",
+)
+LAYOUTS = (OVERHAUL_LAYOUT, LEGACY_LAYOUT)
+PROGRESSION_PATH = LEGACY_LAYOUT.progression
+POOL_PATH = LEGACY_LAYOUT.pool
 
 
 @dataclass
@@ -26,6 +61,7 @@ class RlsInstallation:
     pool_hash: str
     supported: bool
     issue: str = ""
+    layout: RlsLayout = LEGACY_LAYOUT
 
 
 @dataclass
@@ -68,7 +104,7 @@ def _version_from_mod_info(read_mod_info) -> str:
         data = json_utils.load_bytes(read_mod_info())
     except (OSError, ValueError, KeyError, zipfile.BadZipFile):
         return ""
-    for key in ("version", "modVersion", "mod_version"):
+    for key in ("version", "modVersion", "mod_version", "version_string"):
         value = data.get(key)
         if isinstance(value, (str, int, float)) and str(value).strip():
             return str(value).strip()
@@ -85,24 +121,38 @@ def _zip_mod_info(archive: zipfile.ZipFile) -> bytes:
 
 
 def _installation(path: Path, read_member, name: str) -> RlsInstallation | None:
-    try:
-        config = json_utils.load_bytes(read_member(PROGRESSION_PATH))
-        pool_data = read_member(POOL_PATH)
-    except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+    for layout in LAYOUTS:
+        try:
+            config = json_utils.load_bytes(read_member(layout.progression))
+            pool_data = read_member(layout.pool)
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+            continue
+        break
+    else:
         return None
 
     pool_hash = hashlib.sha256(pool_data).hexdigest()
     version = _version_from_name(name)
+    if not version and layout.version_file:
+        version = _version_from_mod_info(lambda: read_member(layout.version_file))
     if not version:
         version = _version_from_mod_info(lambda: read_member("mod_info.json"))
-    supported = pool_hash == KNOWN_POOL_SHA256
+    verified_version = KNOWN_POOL_HASHES.get(pool_hash)
+    supported = verified_version is not None
     warnings = []
     if not supported:
-        warnings.append("Vehicle pool hash is not the verified 2.7.2 rule source")
-    if version != "2.7.2":
-        warnings.append("Version is unknown or differs from the verified 2.7.2 rule source")
+        warnings.append("Vehicle pool hash is not a verified RLS rule source")
+    if version not in KNOWN_POOL_HASHES.values():
+        warnings.append("Version is unknown or differs from the verified RLS versions")
+    elif supported and version != verified_version:
+        warnings.append(f"Rule source matches RLS {verified_version}, not the reported {version}")
     issue = "; ".join(warnings)
-    return RlsInstallation(str(path), version, config, pool_hash, supported, issue)
+    return RlsInstallation(str(path), version, config, pool_hash, supported, issue, layout)
+
+
+def _is_unpacked_rls(path: Path) -> bool:
+    return any((path / layout.progression).is_file() and (path / layout.pool).is_file()
+               for layout in LAYOUTS)
 
 
 def discover_rls(mods_root: str | os.PathLike) -> list[RlsInstallation]:
@@ -125,7 +175,7 @@ def discover_rls(mods_root: str | os.PathLike) -> list[RlsInstallation]:
         candidates[key] = path
 
     for search_root in search_roots:
-        if (search_root / PROGRESSION_PATH).is_file() and (search_root / POOL_PATH).is_file():
+        if _is_unpacked_rls(search_root):
             add_candidate(search_root)
         try:
             items = sorted(search_root.iterdir(), key=lambda item: item.name.casefold())
@@ -136,7 +186,7 @@ def discover_rls(mods_root: str | os.PathLike) -> list[RlsInstallation]:
                 continue
             if item.is_file() and item.suffix.casefold() == ".zip":
                 add_candidate(item)
-            elif item.is_dir() and (item / PROGRESSION_PATH).is_file() and (item / POOL_PATH).is_file():
+            elif item.is_dir() and _is_unpacked_rls(item):
                 add_candidate(item)
 
     found = []

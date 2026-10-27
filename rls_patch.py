@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 import json_utils
-from rls_contracts import KNOWN_POOL_SHA256, MAX_METADATA_BYTES, POOL_PATH, PROGRESSION_PATH
+from rls_contracts import KNOWN_POOL_HASHES, LAYOUTS, LEGACY_LAYOUT, MAX_METADATA_BYTES
 from storage import backup_file
 
 PATCH_NAME = "infogen_rls_contracts.zip"
@@ -24,7 +24,11 @@ setExtensionUnloadMode("infogenRlsContracts", "manual")
 LUA_EXTENSION = '''local M = {}
 local tag = "infogenRlsContracts"
 local manifestPath = "/settings/infogen_rls_contracts.json"
-local modulePath = "gameplay/fre/config"
+-- RLS 2.8 moved the progression config module; 2.7 keeps the legacy path.
+local candidates = {
+  { module = "overhaul/events/freConfig", file = "/lua/ge/extensions/overhaul/events/freConfig.lua" },
+  { module = "gameplay/fre/config", file = "/lua/ge/extensions/gameplay/fre/config.lua" },
+}
 local config, original, wrapper
 local elapsed = 0
 local warned = false
@@ -41,7 +45,14 @@ local function attach()
     detach()
     return
   end
-  if not FS:fileExists("/lua/ge/extensions/gameplay/fre/config.lua") then
+  local modulePath
+  for _, candidate in ipairs(candidates) do
+    if FS:fileExists(candidate.file) then
+      modulePath = candidate.module
+      break
+    end
+  end
+  if not modulePath then
     detach()
     return
   end
@@ -150,7 +161,10 @@ def install_patch(mods_root, installation, model_keys):
     if not keys:
         raise ValueError("Select at least one vehicle model")
     source = Path(installation.path)
-    members = ("lua/ge/extensions/gameplay/fre/config.lua", PROGRESSION_PATH, POOL_PATH)
+    layout = getattr(installation, "layout", LEGACY_LAYOUT)
+    if layout not in LAYOUTS:
+        raise ValueError("Unknown RLS file layout")
+    members = (layout.config_lua, layout.progression, layout.pool)
     contents = {}
     if source.is_dir():
         for member in members:
@@ -165,16 +179,17 @@ def install_patch(mods_root, installation, model_keys):
                 if info.file_size > MAX_METADATA_BYTES:
                     raise ValueError("RLS metadata exceeds the 16 MiB limit")
                 contents[member] = archive.read(info)
-    json_utils.load_bytes(contents[PROGRESSION_PATH])
+    json_utils.load_bytes(contents[layout.progression])
     if b"getContractVehicleModels" not in contents[members[0]]:
         raise ValueError("RLS contract model API is missing; this addon cannot connect to it")
     old = read_patch(mods_root)  # Refuse collisions with unrelated files.
     # Keep an intentionally disabled addon disabled while updating its selection.
     target = disabled if old and not old["enabled"] else enabled
-    pool_hash = hashlib.sha256(contents[POOL_PATH]).hexdigest()
+    pool_hash = hashlib.sha256(contents[layout.pool]).hexdigest()
     data = {"owner": OWNER, "schema": 1, "models": keys,
             "rlsVersion": installation.version, "rlsPoolHash": pool_hash,
-            "verifiedRules": installation.supported and pool_hash == KNOWN_POOL_SHA256}
+            "rlsLayout": layout.name,
+            "verifiedRules": installation.supported and pool_hash in KNOWN_POOL_HASHES}
     fd, temporary = tempfile.mkstemp(prefix=".infogen-contracts-", suffix=".tmp", dir=target.parent)
     os.close(fd)
     try:

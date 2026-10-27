@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+import unittest.mock
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -102,6 +103,54 @@ class RlsDiscoveryTests(unittest.TestCase):
         installation, = discover_rls(self.root)
 
         self.assertEqual(installation.version, "2.7.2")
+
+    def test_rls_28_overhaul_layout_is_detected_with_version_file(self):
+        layout = rls_contracts.OVERHAUL_LAYOUT
+        archive = self.root / "rls_career_overhaul.zip"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr(layout.progression, json.dumps(progression_config()))
+            zf.writestr(layout.pool, b"test vehicle pool")
+            zf.writestr(layout.version_file, b'{"version_string": "2.8.0"}')
+
+        installation, = discover_rls(self.root)
+
+        self.assertIs(installation.layout, layout)
+        self.assertEqual(installation.version, "2.8.0")
+        self.assertFalse(installation.supported)
+        self.assertEqual(installation.config["contractVehicleModels"], ["car", "blocked", "streetonly"])
+
+    def test_known_hashes_mark_each_verified_version_supported(self):
+        for pool_hash, version in rls_contracts.KNOWN_POOL_HASHES.items():
+            with self.subTest(version=version), unittest.mock.patch(
+                    "rls_contracts.hashlib.sha256",
+                    return_value=SimpleNamespace(hexdigest=lambda value=pool_hash: value)):
+                for item in self.root.iterdir():
+                    item.unlink()
+                write_rls_zip(self.root / f"rls_{version}.zip")
+                installation, = discover_rls(self.root)
+                self.assertTrue(installation.supported)
+                self.assertEqual(installation.issue, "")
+
+    def test_rule_source_and_reported_version_mismatch_warns(self):
+        pool_hash = rls_contracts.KNOWN_POOL_SHA256
+        with unittest.mock.patch("rls_contracts.hashlib.sha256",
+                                 return_value=SimpleNamespace(hexdigest=lambda: pool_hash)):
+            write_rls_zip(self.root / "rls_2.8.0.zip")
+            installation, = discover_rls(self.root)
+        self.assertTrue(installation.supported)
+        self.assertIn("matches RLS 2.7.2", installation.issue)
+
+    def test_unpacked_overhaul_folder_is_detected(self):
+        layout = rls_contracts.OVERHAUL_LAYOUT
+        folder = self.root / "unpacked" / "rls"
+        for member, data in ((layout.progression, json.dumps(progression_config()).encode()),
+                             (layout.pool, b"pool")):
+            target = folder / member
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        installation, = discover_rls(self.root)
+        self.assertIs(installation.layout, layout)
 
     def test_malformed_zip_is_skipped(self):
         (self.root / "broken.zip").write_bytes(b"not a zip archive")

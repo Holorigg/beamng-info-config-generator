@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from lupa.lua51 import LuaRuntime
 
-from rls_contracts import RlsInstallation
+from rls_contracts import OVERHAUL_LAYOUT, RlsInstallation
 from rls_patch import (
     LUA_EXTENSION,
     MANIFEST,
@@ -104,17 +104,38 @@ class PatchLifecycleTests(unittest.TestCase):
             pool_hash="stale-discovery-hash", supported=True,
         )
 
-        with patch("rls_patch.KNOWN_POOL_SHA256", "different-known-hash"):
+        with patch.dict("rls_patch.KNOWN_POOL_HASHES", {}, clear=True):
             self.install(["vehicle"], installation)
             unverified = read_patch(self.mods)
         self.assertEqual(unverified["rlsPoolHash"], source_hash)
         self.assertFalse(unverified["verifiedRules"])
 
-        with patch("rls_patch.KNOWN_POOL_SHA256", source_hash):
+        with patch.dict("rls_patch.KNOWN_POOL_HASHES", {source_hash: "2.7.2"}, clear=True):
             self.install(["vehicle"], installation)
         verified = read_patch(self.mods)
         self.assertEqual(verified["rlsPoolHash"], source_hash)
         self.assertTrue(verified["verifiedRules"])
+
+    def test_rls_28_overhaul_layout_installs_and_records_layout(self):
+        archive_path = self.mods / "repo" / "rls_28.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr(OVERHAUL_LAYOUT.config_lua,
+                             "M.getContractVehicleModels = function() return {} end")
+            archive.writestr(OVERHAUL_LAYOUT.progression, "{}")
+            archive.writestr(OVERHAUL_LAYOUT.pool, "return {}")
+        installation = RlsInstallation(
+            path=str(archive_path), version="2.8.0", config={}, pool_hash="pool-hash",
+            supported=False, layout=OVERHAUL_LAYOUT,
+        )
+        self.install(["vehicle"], installation)
+        data = read_patch(self.mods)
+        self.assertEqual(data["models"], ["vehicle"])
+        self.assertEqual(data["rlsLayout"], "2.8")
+        self.assertEqual(data["rlsPoolHash"], hashlib.sha256(b"return {}").hexdigest())
+
+    def test_legacy_installation_still_reads_legacy_members(self):
+        self.install(["vehicle"])
+        self.assertEqual(read_patch(self.mods)["rlsLayout"], "2.7")
 
     def test_invalid_model_keys_are_rejected(self):
         for keys in ([], [""], ["two words"], ["bad/key"], ["café"], [None], [1]):
@@ -187,10 +208,13 @@ class LuaRuntimeTests(unittest.TestCase):
         self.base = self.lua.table_from(["Car_A", "Van"])
         self.base_calls = 0
 
+        self.config_file = "/lua/ge/extensions/gameplay/fre/config.lua"
+        self.required = []
+
         def file_exists(_fs, path):
             if path == "/settings/infogen_rls_contracts.json":
                 return self.manifest_exists
-            if path == "/lua/ge/extensions/gameplay/fre/config.lua":
+            if path == self.config_file:
                 return self.config_file_exists
             return False
 
@@ -205,7 +229,11 @@ class LuaRuntimeTests(unittest.TestCase):
         self.globals.FS = self.lua.table_from({"fileExists": file_exists})
         self.globals.jsonReadFile = json_read_file
         self.globals.log = lambda *args: self.logs.append(args)
-        self.globals.require = lambda _name: self.config
+        def require(name):
+            self.required.append(name)
+            return self.config
+
+        self.globals.require = require
         self.config.getContractVehicleModels = self.lua.eval(
             "function(callback) return function(...) return callback(...) end end"
         )(lambda *_args: self._base_models())
@@ -276,6 +304,16 @@ class LuaRuntimeTests(unittest.TestCase):
         self.extension.onUpdate(0.5)
         self.assertTrue(self._lua_equal(self.config.getContractVehicleModels, self.original_getter))
         self.assertEqual(len(self.logs), 1)
+
+    def test_legacy_config_module_is_required_for_rls_27(self):
+        self._update_to_attach()
+        self.assertEqual(self.required, ["gameplay/fre/config"])
+
+    def test_overhaul_config_module_is_required_for_rls_28(self):
+        self.config_file = "/lua/ge/extensions/overhaul/events/freConfig.lua"
+        self._update_to_attach()
+        self.assertEqual(self.required, ["overhaul/events/freConfig"])
+        self.assertEqual(self._list(self.config.getContractVehicleModels()), ["Car_A", "Van", "car_b"])
 
     def test_no_rls_config_file_is_a_noop(self):
         self.config_file_exists = False

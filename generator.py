@@ -4,6 +4,8 @@ info_config JSON generation and validation.
 import random
 import math
 
+from vocabulary import DEFAULT_INDUCTION, canonical, propulsion_for
+
 _DESC_TEMPLATES = [
     "A well-rounded configuration suited for everyday driving.",
     "A capable variant offering a balanced blend of performance and comfort.",
@@ -48,15 +50,17 @@ def generate(config_name: str, auto_detected: dict, defaults: dict) -> dict:
         "Config Type":    defaults.get("config_type", "Factory"),
         "Drivetrain":     auto_detected.get("Drivetrain",   "RWD"),
         "Transmission":   auto_detected.get("Transmission", "Automatic"),
-        "Fuel Type":      auto_detected.get("Fuel Type",    "Gasoline"),
-        "Propulsion":     "Electric" if auto_detected.get("Fuel Type") == "Electric" else "ICE",
-        "Induction Type": defaults.get("induction", "Turbo"),
+        "Fuel Type":      canonical("Fuel Type", auto_detected.get("Fuel Type", "Gasoline")),
+        "Propulsion":     propulsion_for(auto_detected.get("Fuel Type")),
+        "Induction Type": canonical("Induction Type", defaults.get("induction") or DEFAULT_INDUCTION),
         "Body Style":     defaults.get("body_style", "Sedan"),
         "Value":          _random_price(defaults),
         "Population":     5000,
         "Off-Road Score": 20,
         "Description":    defaults.get("description") or _default_description(),
     }
+    if defaults.get("insurance_class"):
+        data["InsuranceClass"] = defaults["insurance_class"]
     _apply_stats(data, defaults)
     return data
 
@@ -74,7 +78,7 @@ def fix(existing: dict, config_name: str, auto_detected: dict, defaults: dict) -
     if "Transmission" in invalid:
         result["Transmission"] = auto_detected.get("Transmission", "Automatic")
     if "Fuel Type" in invalid:
-        result["Fuel Type"] = auto_detected.get("Fuel Type", "Gasoline")
+        result["Fuel Type"] = canonical("Fuel Type", auto_detected.get("Fuel Type", "Gasoline"))
     if "Value" in invalid:
         result["Value"] = _random_price(defaults)
     return result

@@ -6,6 +6,7 @@ from PySide6.QtCore import QThread, Signal, Slot
 from PySide6.QtWidgets import QDialog, QLabel, QProgressBar, QPushButton, QVBoxLayout
 
 from storage import OperationCancelled
+from i18n import t
 from ui_icons import icon
 
 
@@ -47,7 +48,7 @@ class TaskDialog(QDialog):
         layout.addWidget(self.bar)
         self.count = QLabel("")
         layout.addWidget(self.count)
-        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button = QPushButton(t("Cancel"))
         self.cancel_button.setIcon(icon("x"))
         self.cancel_button.clicked.connect(self.cancel)
         layout.addWidget(self.cancel_button)
@@ -65,7 +66,7 @@ class TaskDialog(QDialog):
     def cancel(self):
         self.worker.cancel_event.set()
         self.cancel_button.setEnabled(False)
-        self.cancel_button.setText("Cancelling...")
+        self.cancel_button.setText(t("Cancelling..."))
 
     @Slot()
     def on_finished(self):

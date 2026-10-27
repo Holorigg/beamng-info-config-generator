@@ -33,13 +33,20 @@ These are file-based estimates of the random-offer pool, not a promise of a part
 | Blacklisted | The discipline excludes this model. The addon deliberately does not bypass the blacklist. |
 | Excluded model | Model metadata identifies a trailer, prop, or device. |
 
-RLS 2.7.2 uses model-level `Config Type` aggregates, not the selected configuration alone. Its stock Drift/Drag contracts have no type whitelist; random Road Racing contracts require `Race`. Owned models bypass this whitelist in the inspected version, but ownership and leaderboard state are not read by this application. Multiple mods defining the same model can also change the effective metadata through game mounting order.
+RLS 2.7.2 and 2.8.0 use model-level `Config Type` aggregates, not the selected configuration alone. Its stock Drift/Drag contracts have no type whitelist; random Road Racing contracts require `Race`. Owned models bypass this whitelist in the inspected version, but ownership and leaderboard state are not read by this application. Multiple mods defining the same model can also change the effective metadata through game mounting order.
 
 Unknown RLS versions or changed rule-source hashes produce a warning and require confirmation, not a version lock. If the contract-model getter API or required files are absent, installation cannot proceed. A runtime API failure logs a warning instead of crashing the game.
 
 ## Verification
 
-Checked against the locally installed **RLS Career Overhaul 2.7.2**, without launching BeamNG. Its vehicle-pool source SHA-256 is `3623b1f4d275c27e11fbd730ddd0ca013e38160692c3885ab38dd3e5f4b1cf31`.
+Checked without launching BeamNG against:
+
+| RLS | Source | Layout | Vehicle-pool SHA-256 |
+| --- | --- | --- | --- |
+| 2.7.2 | Locally installed archive | `gameplay/fre`, `lua/ge/extensions/gameplay/...` | `3623b1f4d275c27e11fbd730ddd0ca013e38160692c3885ab38dd3e5f4b1cf31` |
+| 2.8.0 | Public `v2.8.0` source tag | `gameplay/overhaul/fre`, `lua/ge/extensions/overhaul/...` | `40059b2ed44e32f44300cb8905eabd92fc47778f529b0607b108c0cbb0309dd4` |
+
+RLS 2.8 moved its configuration module to `overhaul/events/freConfig` and renamed the inventory module, but its contract selection rules are the same as 2.7.2. The addon checks which module file exists and wraps that one, so one addon works with either version. The 2.8 alpha distributed on Patreon may differ from the source tag; a different hash produces a warning, not a block.
 
 The verification script runs the installed RLS configuration loader and contract selector in an isolated Lua 5.1 VM. It checks 2,000 seeded selections per discipline before applying, after applying, and after unloading the addon. Checks cover additions, Race filtering, invalid trailers, owned-model exemption, unchanged base configuration, restoration, and empty-list fallback. Engine services are test doubles; this is not an in-game test.
 
@@ -58,7 +65,7 @@ To repeat the file-only check with your own installation:
 
 ```powershell
 python -m pip install -r requirements-dev.txt
-python scripts/verify_rls_files.py --rls "C:/path/to/rls_career_overhaul_2.7.2.zip" --vehicles "C:/path/to/BeamNG.drive/content/vehicles"
+python scripts/verify_rls_files.py --rls "C:/path/to/rls_career_overhaul.zip" --vehicles "C:/path/to/BeamNG.drive/content/vehicles"
 ```
 
 The script reads these archives without modifying them. Its generated test vehicle keys live only inside the isolated VM. No installed mods or saves are changed.

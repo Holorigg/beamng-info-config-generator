@@ -24,8 +24,11 @@ Valid does not mean the car has been tested in-game or is guaranteed to appear
 at a dealership.
 
 Search and status filters only change what is shown. **Generate missing** and
-**Fix incomplete** apply to all loaded configurations. **Generate selected**
-uses the current selection. Both tree and table views support multi-selection.
+**Fix incomplete** apply to all loaded configurations unless you choose
+**Only those shown by search and filters** in the preview that opens first.
+**Generate selected** uses the current selection. Both tree and table views
+support multi-selection. The preview lists each file, whether it is created or
+updated, and which fields change, and can turn on backups.
 
 Bulk repair skips unreadable info documents instead of silently replacing their
 contents. Check History for scan issues and write errors.
@@ -50,6 +53,24 @@ standard JSON, so comments and original formatting are not retained.
 Ordinary form saves merge edited values into the existing document. Fields
 outside the form, such as years, paints, and mod-specific properties, are kept.
 Explicit **Regenerate** replaces the full info document after confirmation.
+
+Choice fields use the values found in BeamNG 0.40 stock vehicles, for example
+Induction `NA`, `Turbo`, `SC` and Fuel `Battery` for electric vehicles. Custom
+values can still be typed. Earlier versions of this editor wrote `Natural`,
+`Supercharger`, and `Electric`; **Analyze** points these out, and they are
+never rewritten silently. Clearing Insurance, Years, Region, or Paint removes
+that key from the file.
+
+## Stock Vehicle Data
+
+The BeamNG.drive installation is found through Steam's library folders. If it
+is not found, choose it in **Settings** or when **From stock** asks for it.
+For a mod whose model key matches a stock vehicle (for example
+`vehicles/etk800/...`), **From stock** fills the form with the model's years,
+body style, region, paint, and insurance class, plus the median price, power,
+torque, and weight of its factory configurations. Generation and Fix use the
+same data when **Use stock vehicle data when generating** is on. The game files
+are only read.
 
 Drivetrain, transmission, and fuel detection from part names is heuristic.
 The application does not simulate the car or calculate performance figures.
