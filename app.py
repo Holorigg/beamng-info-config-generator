@@ -34,6 +34,7 @@ import game_paths
 from dialogs import (
     analyze_dialog, choose_game_dir, confirm_bulk, copy_source_dialog, history_dialog, settings_dialog,
 )
+import measure
 import stock
 from rls_contracts import model_key
 from editor_form import build_details_form, set_combo, set_insurance
@@ -301,6 +302,10 @@ class App(QMainWindow):
         bot_lay.addWidget(self.fix_all_btn)
         self.gen_sel_btn = self._button(t("Generate selected (0)"), "sparkles", self._generate_selected)
         bot_lay.addWidget(self.gen_sel_btn)
+        self.measure_btn = self._button(t("Measure in game"), "gauge", self._measure_in_game)
+        self.measure_btn.setToolTip(t("Start BeamNG with a temporary user folder and measure power, torque, "
+                                      "weight and drivetrain of the selected configurations"))
+        bot_lay.addWidget(self.measure_btn)
         bot_lay.addWidget(self._button(t("Analyze"), "chart-no-axes-combined", self._show_analyze_dialog))
         bot_lay.addStretch()
         self.status_lbl = label(t("No mods loaded"), "muted")
@@ -695,25 +700,111 @@ class App(QMainWindow):
         value = self._stock_for(entry).get("Value")
         return {**data, "Value": value} if value else data
 
+    def _require_game_dir(self):
+        """Return the game folder, asking the user to choose it when it was not found."""
+        game = self._game_dir()
+        if game:
+            return game
+        if QMessageBox.question(
+                self, t("BeamNG.drive not found"),
+                t("The game installation was not found automatically.\n\n"
+                  "Choose the BeamNG.drive folder?"),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes) != QMessageBox.Yes:
+            return ""
+        path = choose_game_dir(self)
+        if not path:
+            return ""
+        self._settings["game_dir"] = path
+        try:
+            _save_settings(self._settings)
+        except OSError as exc:
+            QMessageBox.warning(self, t("Settings"), str(exc))
+        return path
+
+    def _measure_in_game(self):
+        if self._busy or not self._confirm_changes():
+            return
+        all_entries = {id(e): e for es in self.mods_data.values() for e in es}
+        entries = [all_entries[eid] for eid in self._selection if eid in all_entries]
+        if not entries and self.selected_entry is not None:
+            entries = [self.selected_entry]
+        entries = [e for e in entries if measure.config_key(e)]
+        if not entries:
+            self.notify(t("Select the configurations to measure first."), "warn")
+            return
+        game = self._require_game_dir()
+        if not game:
+            return
+        minutes = max(1, round((60 + 10 * len(entries)) / 60))
+        if QMessageBox.question(
+                self, t("Measure in game"),
+                t("BeamNG.drive will start in its own window with a temporary user folder and measure "
+                  "{count} configuration(s). This takes about {minutes} min; the game closes by itself.\n\n"
+                  "Your mods, settings and saves are not changed. Results are shown for review before "
+                  "anything is written.").format(count=len(entries), minutes=minutes),
+                QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Yes) != QMessageBox.Yes:
+            return
+
+        def task(cancel, progress):
+            progress(0, len(entries), t("Preparing a temporary user folder"))
+            session = measure.prepare(entries)
+            try:
+                measure.launch(session, game)
+                return measure.wait(session, cancel, lambda done, total, _text: progress(
+                    done, total, t("Measuring in BeamNG.drive: {done} of {total}").format(done=done, total=total)))
+            finally:
+                measure.cleanup(session)
+
+        started = time.monotonic()
+        self._busy = True
+        worker = TaskDialog(t("Measure in game"), task, self).execute()
+        self._busy = False
+        self._history.append({"time": datetime.now().isoformat(timespec="seconds"), "operation": "Measure",
+                              "completed": len((worker.value or {}).get("results", [])),
+                              "cancelled": worker.cancelled, "seconds": time.monotonic() - started,
+                              "errors": [worker.error] if worker.error else []})
+        if worker.cancelled:
+            self.notify(t("Measuring cancelled"), "warn")
+            return
+        if worker.error:
+            QMessageBox.critical(self, t("Measure in game"), worker.error)
+            return
+        measured, errors = measure.match_results(entries, worker.value or {})
+        self._history[-1]["errors"].extend(errors)
+        defaults = self._editor_defaults()
+        pairs = []
+        for entry in entries:
+            if id(entry) not in measured:
+                continue
+            if entry.status != "missing" and isinstance(entry.info_content, dict) and not entry.parse_error:
+                base = dict(entry.info_content)
+            else:
+                base = self._with_stock(entry, generate(entry.config_name, entry.auto_detected, defaults), defaults)
+            pairs.append((entry, {**base, **measured[id(entry)]}))
+        if errors:
+            QMessageBox.warning(self, t("Measure in game"),
+                                t("{count} configuration(s) could not be measured.").format(count=len(errors))
+                                + "\n\n" + "\n".join(errors[:8]))
+        pairs = self._confirm_bulk(t("Apply measured values"), pairs, allow_scope=False)
+        if not pairs:
+            return
+        groups = self._write_groups_for_pairs(pairs)
+
+        def done(n):
+            self._rebuild_view()
+            self._update_status(updated=n)
+            if self.selected_entry and any(e is self.selected_entry for e, _ in pairs):
+                self._load_to_editor(self.selected_entry)
+
+        self._run_batch(t("Writing measured values"), groups, self._write_entry_pairs, done)
+
     def _fill_from_stock(self):
         entry = self.selected_entry
         if entry is None:
             return
         if not self._game_dir():
-            if QMessageBox.question(
-                    self, t("BeamNG.drive not found"),
-                    t("The game installation was not found automatically.\n\n"
-                    "Choose the BeamNG.drive folder to use stock vehicle data?"),
-                    QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes) != QMessageBox.Yes:
+            if not self._require_game_dir():
                 return
-            path = choose_game_dir(self)
-            if not path:
-                return
-            self._settings["game_dir"] = path
-            try:
-                _save_settings(self._settings)
-            except OSError as exc:
-                QMessageBox.warning(self, t("Settings"), str(exc))
             self._update_stock_button(entry)
             if not self.stock_btn.isEnabled():
                 self.notify(t("'{model}' is not a stock BeamNG model").format(model=model_key(entry)), "warn")

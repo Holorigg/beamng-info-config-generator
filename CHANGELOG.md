@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4.0 - 2026-10-27
+
+- **Measure in game** starts BeamNG.drive with a temporary user folder, spawns the selected configurations, and reads power, torque, peak RPM, weight, drivetrain, transmission, fuel, and induction from the vehicle itself. Results open in the write preview. Installed mods, settings, and saves are not changed.
+
 ## v1.3.0 - 2026-10-27
 
 ### Added

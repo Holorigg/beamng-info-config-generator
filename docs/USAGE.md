@@ -61,6 +61,28 @@ values can still be typed. Earlier versions of this editor wrote `Natural`,
 never rewritten silently. Clearing Insurance, Years, Region, or Paint removes
 that key from the file.
 
+## Measuring In Game
+
+**Measure in game** measures the selected configurations, or the open one, in
+BeamNG.drive itself. The application creates a temporary user folder that
+contains only a small measuring addon and the mods being measured, linked
+rather than copied, and starts the game with `-userpath` pointing at it. The
+addon loads a small level, spawns each configuration, reads the values from the
+vehicle's powertrain and physics, writes a result file, and closes the game.
+The temporary folder is removed afterwards.
+
+Measured fields: `Power`, `Torque`, `PowerPeakRPM`, `TorquePeakRPM`, `Weight`,
+`Weight/Power`, `Drivetrain`, `Transmission`, `Fuel Type`, `Induction Type`,
+and `Propulsion`, rounded like the game's own info files. Other fields are kept.
+Configurations without an info file get generated values for the remaining
+required fields. Everything is shown in the write preview first.
+
+Your installed mods, settings, and saves are not opened for writing. The game
+window is visible while measuring; do not close it. The first start in a fresh
+folder prepares shaders and takes longer; afterwards a configuration takes
+about 5 to 10 seconds. A configuration that needs parts from another mod can
+only be measured when that mod is part of the same selection.
+
 ## Stock Vehicle Data
 
 The BeamNG.drive installation is found through Steam's library folders. If it

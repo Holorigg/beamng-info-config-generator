@@ -30,6 +30,7 @@ Neither version needs an installer. Keep the portable folder together, including
 - **Find missing info files.** Scan a mods directory, search configurations, and filter by Missing, Incomplete, or Valid. Problem counts are shown per mod.
 - **Edit one config or process a batch.** Use the form, edit the full JSON, or generate metadata for a selection. The form follows BeamNG 0.40 values and includes insurance class, years, region, population, and paint.
 - **Use stock vehicle data.** For mods based on a stock model, **From stock** fills typical price, power, torque, weight, years, and more from your game files. Generation can use the same data.
+- **Measure in game.** Start BeamNG with a temporary user folder and read real power, torque, weight, drivetrain, transmission, fuel, and induction of the selected configurations. Review the values before they are written.
 - **Preview bulk writes.** Generate and Fix show every file and changed field before writing, with an option to limit them to what search and filters show.
 - **Keep existing metadata.** Ordinary saves retain fields the form does not edit, such as years, paints, and custom properties.
 - **Work with archives directly.** New info files can be appended without extracting the mod. Replacements are grouped by archive.
@@ -84,7 +85,7 @@ Cancelling stops later work but does not undo completed archives. Append rollbac
 
 ## A Few Things To Know
 
-**Does it measure horsepower or performance?** No. Part-name detection for drivetrain, transmission, and fuel is heuristic. **From stock** uses the median of the stock model's factory configurations, which is a starting point, not a measurement of the modded car.
+**Does it measure horsepower or performance?** **Measure in game** reads power, torque, peak RPM, weight, and powertrain type from the vehicle in BeamNG itself, like the game's stock info files. Acceleration, top speed, and braking times are not measured. Without it, part-name detection is heuristic, and **From stock** is a starting point taken from the stock model.
 
 **Will it fix RLS Career Overhaul listings?** It can create or repair vehicle metadata used by career mods. The separate RLS Contracts addon extends the contract model pool, not dealership listings. A Valid status only means the metadata passed this tool's checks; dealer filters, game state, and mod compatibility still matter.
 

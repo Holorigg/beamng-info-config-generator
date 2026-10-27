@@ -70,8 +70,8 @@ RU = {
         "Заполнено полей: {count} по стоковой {model} (конфигураций: {configs}). Проверьте и сохраните.",
     "No stock data for this model": "Для этой модели нет стоковых данных",
     "BeamNG.drive not found": "BeamNG.drive не найден",
-    "The game installation was not found automatically.\n\nChoose the BeamNG.drive folder to use stock vehicle data?":
-        "Игра не найдена автоматически.\n\nВыбрать папку BeamNG.drive, чтобы использовать данные стоковых машин?",
+    "The game installation was not found automatically.\n\nChoose the BeamNG.drive folder?":
+        "Игра не найдена автоматически.\n\nВыбрать папку BeamNG.drive?",
     "Unreadable info: {error}": "Не удалось прочитать info: {error}",
     "Missing or invalid: {fields}": "Нет или неверно: {fields}",
     "No info file yet. Save creates it from the form.": "Info-файла пока нет. Кнопка «Сохранить» создаст его из формы.",
@@ -337,4 +337,18 @@ RU = {
     "Notes": "Заметки",
     "{count} new info file(s) in {mods} mod(s).": "Новых info-файлов: {count}, модов: {mods}.",
     "{count} info file(s) to update in {mods} mod(s).": "Будет изменено info-файлов: {count}, модов: {mods}.",
+
+    # Measuring in game
+    "Measure in game": "Замерить в игре",
+    "Start BeamNG with a temporary user folder and measure power, torque, weight and drivetrain of the selected configurations":
+        "Запустить BeamNG с временной пользовательской папкой и замерить мощность, момент, массу и привод выбранных конфигураций",
+    "Select the configurations to measure first.": "Сначала выберите конфигурации для замера.",
+    "BeamNG.drive will start in its own window with a temporary user folder and measure {count} configuration(s). This takes about {minutes} min; the game closes by itself.\n\nYour mods, settings and saves are not changed. Results are shown for review before anything is written.":
+        "BeamNG.drive запустится в отдельном окне с временной пользовательской папкой и замерит конфигурации: {count}. Это займёт примерно {minutes} мин, игра закроется сама.\n\nВаши моды, настройки и сохранения не меняются. Результаты будут показаны для проверки до записи.",
+    "Preparing a temporary user folder": "Подготовка временной пользовательской папки",
+    "Measuring in BeamNG.drive: {done} of {total}": "Замер в BeamNG.drive: {done} из {total}",
+    "Measuring cancelled": "Замер отменён",
+    "{count} configuration(s) could not be measured.": "Не удалось замерить конфигураций: {count}.",
+    "Apply measured values": "Применение замеренных значений",
+    "Writing measured values": "Запись замеренных значений",
 }

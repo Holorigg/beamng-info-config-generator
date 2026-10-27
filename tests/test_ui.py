@@ -262,6 +262,28 @@ class UiTests(unittest.TestCase):
         self.window._generate_all_missing()
         self.assertEqual(race.status, before)
 
+    def test_measure_in_game_writes_reviewed_values(self):
+        import measure
+        from types import SimpleNamespace
+        probe = {"weight": 1501, "power": 201.4, "torque": 352, "layout": "AWD", "turbo": True,
+                 "gearboxes": ["dctGearbox"], "storages": [{"type": "fuelTank", "energy": "gasoline"}]}
+        self.activate("race")
+        session = SimpleNamespace(root=self.root / "unused")
+        with patch.object(measure, "prepare", return_value=session), \
+                patch.object(measure, "launch") as launch, \
+                patch.object(measure, "cleanup") as cleanup, \
+                patch.object(measure, "wait", return_value={"done": True, "results": [
+                    {"model": "car", "config": "race", "data": probe}]}), \
+                patch.object(self.window, "_game_dir", return_value=str(self.root)), \
+                patch.object(QMessageBox, "question", return_value=QMessageBox.Yes):
+            self.window._measure_in_game()
+        launch.assert_called_once()
+        cleanup.assert_called_once_with(session)
+        data = json.loads(Path(self.entries["race"].info_path).read_text())
+        self.assertEqual((data["Power"], data["Torque"], data["Weight"]), (201, 355, 1505))
+        self.assertEqual((data["Drivetrain"], data["Transmission"], data["Induction Type"]), ("AWD", "DCT", "Turbo"))
+        self.assertEqual(self.bulk_preview.call_args.args[1], "Apply measured values")
+
     def test_bulk_preview_backup_choice_is_saved(self):
         self.bulk_preview.side_effect = lambda _parent, _title, pairs, *args: (pairs, True)
         self.window._generate_all_missing()
