@@ -45,6 +45,11 @@ class ConversionTests(unittest.TestCase):
                               "storages": [{"type": "fuelTank", "energy": "gasoline"}, {"type": "n2oTank"}]})
         self.assertEqual((sc["Induction Type"], sc["Fuel Type"]), ("SC + N2O", "Gasoline"))
 
+    def test_chassis_without_driven_wheels_has_no_drivetrain(self):
+        info = measure.to_info({"power": 277.8, "layout": "4x0", "gearboxes": {}})
+        self.assertNotIn("Drivetrain", info)
+        self.assertNotIn("Transmission", info)
+
     def test_trailer_without_engine_only_reports_weight(self):
         self.assertEqual(measure.to_info({"weight": 812.2, "power": 0, "torque": 0, "layout": "Other"}),
                          {"Weight": 815})
@@ -110,11 +115,25 @@ class SessionTests(unittest.TestCase):
             measure.wait(session, cancel, poll=0.01)
         measure.cleanup(session)
 
-    def test_finished_process_without_done_returns_partial_results(self):
+    def test_game_closing_early_is_reported_with_its_log(self):
         session = measure.prepare(self.entries[:1], base_dir=self.root)
-        session.process = SimpleNamespace(poll=lambda: 0)
-        self.assertEqual(measure.wait(session, poll=0.01), {})
+        session.process = SimpleNamespace(poll=lambda: 16777218, returncode=16777218)
+        (session.user / "current" / "beamng.log").write_text("line one\nfatal problem\n")
+        with self.assertRaisesRegex(RuntimeError, r"exit code 16777218(.|\n)*fatal problem"):
+            measure.wait(session, poll=0.01)
+        session.result_path.parent.mkdir(parents=True)
+        session.result_path.write_text(json.dumps({"done": False, "results": [{"model": "car"}]}))
+        self.assertEqual(len(measure.wait(session, poll=0.01)["results"]), 1)
         measure.cleanup(session)
+
+    def test_portable_profile_redirect_is_undone_for_the_game(self):
+        env = {"USERPROFILE": "D:/portable/data", "HOME": "D:/portable/data", "PATH": "x",
+               "BEAMNG_INFOGEN_ORIGINAL_USERPROFILE": "C:/Users/me", "BEAMNG_INFOGEN_ORIGINAL_HOME": ""}
+        game = measure.game_environment(env)
+        self.assertEqual(game["USERPROFILE"], "C:/Users/me")
+        self.assertNotIn("HOME", game)
+        self.assertNotIn("BEAMNG_INFOGEN_ORIGINAL_USERPROFILE", game)
+        self.assertEqual(measure.game_environment({"USERPROFILE": "C:/Users/me"}), {"USERPROFILE": "C:/Users/me"})
 
     def test_nothing_measurable_is_rejected(self):
         with self.assertRaises(ValueError):

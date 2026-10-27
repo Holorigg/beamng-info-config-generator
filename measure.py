@@ -264,13 +264,35 @@ def prepare(entries, settle=3, base_dir=None) -> Session:
     return session
 
 
+def game_environment(environ=None) -> dict:
+    """The user's real environment; the portable build redirects the profile for itself only."""
+    env = dict(os.environ if environ is None else environ)
+    for name in ("USERPROFILE", "HOME"):
+        original = env.pop(f"BEAMNG_INFOGEN_ORIGINAL_{name}", None)
+        if original is None:
+            continue
+        if original:
+            env[name] = original
+        else:
+            env.pop(name, None)
+    return env
+
+
 def launch(session: Session, game_dir) -> subprocess.Popen:
     exe = game_executable(game_dir)
     if not exe.is_file():
         raise FileNotFoundError(f"Game executable not found: {exe}")
     session.process = subprocess.Popen(
-        [str(exe), "-userpath", str(session.user), "-nosteam"], cwd=str(game_dir))
+        [str(exe), "-userpath", str(session.user), "-nosteam"], cwd=str(game_dir), env=game_environment())
     return session.process
+
+
+def log_tail(session: Session, lines=12) -> str:
+    try:
+        text = (session.user / "current" / "beamng.log").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return "\n".join(text.splitlines()[-lines:])
 
 
 def read_results(session: Session) -> dict:
@@ -296,7 +318,12 @@ def wait(session: Session, cancel=None, progress=None, timeout=None, poll=1.0):
             if data.get("done"):
                 return data
             if session.process is not None and session.process.poll() is not None:
-                return data
+                if data.get("results"):
+                    return data
+                tail = log_tail(session)
+                raise RuntimeError(
+                    f"The game closed before measuring (exit code {session.process.returncode})."
+                    + (f"\n\nLast lines of the game log:\n{tail}" if tail else "\n\nThe game wrote no log."))
             if time.monotonic() - started > timeout:
                 raise TimeoutError("The game did not finish measuring in time")
             time.sleep(poll)
@@ -373,7 +400,8 @@ def to_info(data: dict) -> dict:
         if rpm is not None:
             info["TorquePeakRPM"] = rpm
     layout = data.get("layout")
-    if isinstance(layout, str) and layout and layout != "Other":
+    # "4x0" means no driven wheels, e.g. a chassis without a transmission.
+    if isinstance(layout, str) and layout and layout != "Other" and not layout.endswith("x0"):
         info["Drivetrain"] = layout
     gearboxes = [g for g in data.get("gearboxes") or [] if isinstance(g, str) and "range" not in g.casefold()]
     if gearboxes:
