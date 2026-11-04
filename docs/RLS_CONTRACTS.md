@@ -44,9 +44,11 @@ Checked without launching BeamNG against:
 | RLS | Source | Layout | Vehicle-pool SHA-256 |
 | --- | --- | --- | --- |
 | 2.7.2 | Locally installed archive | `gameplay/fre`, `lua/ge/extensions/gameplay/...` | `3623b1f4d275c27e11fbd730ddd0ca013e38160692c3885ab38dd3e5f4b1cf31` |
-| 2.8.0 | Public `v2.8.0` source tag | `gameplay/overhaul/fre`, `lua/ge/extensions/overhaul/...` | `40059b2ed44e32f44300cb8905eabd92fc47778f529b0607b108c0cbb0309dd4` |
+| 2.8.0 | Public `v2.8.0` release archive | `gameplay/overhaul/fre`, `lua/ge/extensions/overhaul/...` | `40059b2ed44e32f44300cb8905eabd92fc47778f529b0607b108c0cbb0309dd4` |
 
-RLS 2.8 moved its configuration module to `overhaul/events/freConfig` and renamed the inventory module, but its contract selection rules are the same as 2.7.2. The addon checks which module file exists and wraps that one, so one addon works with either version. The 2.8 alpha distributed on Patreon may differ from the source tag; a different hash produces a warning, not a block.
+RLS 2.8 moved its configuration module to `overhaul/events/freConfig` and renamed the inventory module, but its contract selection rules are the same as 2.7.2. The addon checks which module file exists and wraps that one, so one addon works with either version. A different hash produces a warning, not a block.
+
+RLS 2.8.0 was also checked inside BeamNG.drive 0.40.4, in a temporary user folder with a started RLS career on West Coast. The addon stayed loaded across the level change. In the live modules, 300 selections per discipline included the added model for Drift and Drag and excluded it from Race because of the `Race` whitelist. Playing an actual contract was not tested. RLS 2.7.2 has not been checked in-game.
 
 The verification script runs the installed RLS configuration loader and contract selector in an isolated Lua 5.1 VM. It checks 2,000 seeded selections per discipline before applying, after applying, and after unloading the addon. Checks cover additions, Race filtering, invalid trailers, owned-model exemption, unchanged base configuration, restoration, and empty-list fallback. Engine services are test doubles; this is not an in-game test.
 

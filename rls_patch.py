@@ -17,8 +17,9 @@ EXTENSION = "infogenRlsContracts"
 OWNER = "Holorigg.BeamNGInfoConfigGenerator.RlsContracts"
 MAX_PATCH_BYTES = 2 * 1024 * 1024
 
-BOOTSTRAP = '''extensions.load("infogenRlsContracts")
+BOOTSTRAP = '''-- The mode must be set first, or the game can unload the addon on level changes.
 setExtensionUnloadMode("infogenRlsContracts", "manual")
+extensions.load("infogenRlsContracts")
 '''
 
 LUA_EXTENSION = '''local M = {}

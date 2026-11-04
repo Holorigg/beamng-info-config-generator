@@ -137,6 +137,13 @@ class PatchLifecycleTests(unittest.TestCase):
         self.install(["vehicle"])
         self.assertEqual(read_patch(self.mods)["rlsLayout"], "2.7")
 
+    def test_bootstrap_sets_unload_mode_before_loading(self):
+        # The game warns and may unload the addon on level changes otherwise.
+        self.install(["vehicle"])
+        with zipfile.ZipFile(self.mods / PATCH_NAME) as archive:
+            script = archive.read("scripts/infogenRlsContracts/modScript.lua").decode()
+        self.assertLess(script.index("setExtensionUnloadMode"), script.index("extensions.load"))
+
     def test_invalid_model_keys_are_rejected(self):
         for keys in ([], [""], ["two words"], ["bad/key"], ["café"], [None], [1]):
             with self.subTest(keys=keys), self.assertRaises(ValueError):

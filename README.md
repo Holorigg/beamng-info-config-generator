@@ -63,7 +63,7 @@ Open **RLS Contracts** after scanning your mods. The table groups configurations
 
 The addon is `infogen_rls_contracts.zip` in the selected mods folder. **Disable patch** switches it off without changing the RLS archive, vehicle mods, or career save. Updating or disabling an existing addon first creates a dated backup. Restart BeamNG after applying, updating, or disabling it.
 
-**Checked against RLS Career Overhaul 2.7.2 and 2.8.0 (BeamNG 0.40):** file inspection and isolated Lua 5.1 tests using each version's actual contract-selection code, including stock BeamNG 0.40 metadata. RLS 2.8.0 was checked from its public source tag, not from the Patreon alpha package. **Not tested in-game.** Other versions are allowed after a warning, not blocked by their version number.
+**Checked with RLS Career Overhaul 2.8.0 inside BeamNG.drive 0.40.4:** in a started RLS career, an added model appeared in the live Drift and Drag pools and the Race filter stayed in effect. Actual contract play was not tested. RLS 2.7.2 was checked with file inspection and isolated Lua 5.1 tests only. Other versions are allowed after a warning, not blocked by their version number.
 
 Adding a model does not force an immediate offer. RLS still controls randomness, unlocks, blacklists, and eligibility. In 2.7.2 and 2.8.0, random Race contracts require at least one configuration with `"Config Type": "Race"`; Drift and Drag do not have that restriction by default. Owned vehicles follow separate RLS rules. The tool does not inspect ownership or your active career state, and it does not relabel street configurations as race cars.
 

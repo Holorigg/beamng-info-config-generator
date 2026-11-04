@@ -55,7 +55,9 @@ def main():
     qt.setStyleSheet(app_module.make_dark_style())
     issues = []
     data = scan_mods_folder(str(args.mods), issues=issues)
-    entries = [entry for group in data.values() for entry in group if entry.status == "ok"]
+    # Prefer a representative configuration, not a bare chassis without driven wheels.
+    entries = [entry for group in data.values() for entry in group if entry.status == "ok"
+               and not str(entry.info_content.get("Drivetrain", "")).endswith("x0")]
     if not entries:
         raise ValueError("No valid configurations available for a real-data screenshot")
     selected = max(entries, key=lambda entry: sum(bool(entry.info_content.get(key))

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.4.1 - 2026-11-04
+
+- Fixed the RLS Contracts addon setting its unload mode too late, which the game warned could unload it. Apply the patch again to update an installed addon.
+- Checked RLS Contracts inside BeamNG.drive 0.40.4 with the RLS 2.8.0 release, in a started career.
+
 ## v1.4.0 - 2026-10-27
 
 - **Measure in game** starts BeamNG.drive with a temporary user folder, spawns the selected configurations, and reads power, torque, peak RPM, weight, drivetrain, transmission, fuel, and induction from the vehicle itself. Results open in the write preview. Installed mods, settings, and saves are not changed.
