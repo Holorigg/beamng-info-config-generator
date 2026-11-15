@@ -96,13 +96,15 @@ def settings_dialog(parent, settings: dict) -> dict | None:
     layout.addWidget(label(t("WRITING"), "groupTitle"))
     layout.addWidget(label(t("ZIP write mode"), "fieldLabel"))
     mode = QComboBox()
-    for text, value in (("Automatic (append / disk)", "auto"), ("Disk", "disk"), ("RAM", "ram")):
+    for text, value in (("Automatic (fast)", "auto"), ("Disk", "disk"), ("RAM", "ram")):
         mode.addItem(t(text), value)
     mode.setCurrentIndex(max(0, mode.findData(settings.get("zip_mode", "auto"))))
-    mode.setToolTip(t("Automatic appends new files. Disk and RAM rebuild the archive. "
-                    "Replacements are committed through a temporary file next to the mod."))
+    mode.setToolTip(t("Automatic writes changed files at the end of the archive and updates its file list "
+                    "without rewriting the archive. Disk and RAM rebuild the whole archive through a "
+                    "temporary file next to the mod and drop old copies of changed files."))
     layout.addWidget(mode)
-    layout.addWidget(label(t("Automatic appends new files without rewriting the archive."), "muted", wrap=True))
+    layout.addWidget(label(t("Automatic is fast: the old copy of a changed file stays inside the archive, "
+                             "a few KB each time. Disk rebuilds a clean archive."), "muted", wrap=True))
     layout.addSpacing(6)
     backup = QCheckBox(t("Back up before writes"))
     backup.setChecked(bool(settings.get("backup_writes", False)))
@@ -119,6 +121,12 @@ def settings_dialog(parent, settings: dict) -> dict | None:
     layout.addWidget(label(t("Language"), "fieldLabel"))
     layout.addWidget(language)
     layout.addWidget(label(t("Takes effect after restarting the application."), "muted"))
+    layout.addSpacing(6)
+    check_updates = QCheckBox(t("Check for updates at startup"))
+    check_updates.setChecked(bool(settings.get("check_updates", True)))
+    layout.addWidget(check_updates)
+    layout.addWidget(label(t("One request to GitHub when the app starts. Nothing is downloaded or installed."),
+                           "muted", wrap=True))
     layout.addSpacing(8)
     buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
     buttons.button(QDialogButtonBox.Save).setIcon(icon("save"))
@@ -131,7 +139,7 @@ def settings_dialog(parent, settings: dict) -> dict | None:
         return None
     return {"zip_mode": mode.currentData(), "backup_writes": backup.isChecked(),
             "game_dir": game["dir"], "use_stock_data": use_stock.isChecked(),
-            "language": language.currentData()}
+            "language": language.currentData(), "check_updates": check_updates.isChecked()}
 
 
 def history_dialog(parent, history: list):

@@ -102,10 +102,13 @@ The latter includes older launch commands; check them against your game version.
 
 ## File Handling And Safety
 
-- **Automatic:** appends new files without reading unrelated archive payloads.
-  Existing-file replacements use a disk rebuild.
-- **Disk:** copies archive entries as streams to a temporary ZIP beside the
-  original, then commits it by replacement.
+- **Automatic:** writes new and changed files at the end of the archive and
+  rewrites only its central directory, without reading unrelated payloads. A
+  replaced file's old bytes stay in the archive but are no longer listed, so the
+  game and ZIP tools see only the new version.
+- **Disk:** copies the compressed data of every entry, without recompressing
+  it, to a temporary ZIP beside the original, then commits it by replacement.
+  Old copies left by Automatic are dropped.
 - **RAM:** assembles the compressed output in memory, writes a temporary file
   beside the original, then commits it by replacement.
 
@@ -113,7 +116,7 @@ Both rebuild modes need free disk space for the replacement archive. RAM mode
 also needs memory for the compressed output and may not be faster. Writes are
 grouped by archive. Existing archive comments and entry metadata are preserved.
 
-Automatic append saves the central-directory tail for rollback on caught write
+Automatic saves the central-directory tail for rollback on caught write
 errors. It cannot guarantee recovery from power loss, a killed process, or every
 filesystem failure. Optional backups create dated `.bak` copies beside the
 originals. A ZIP backup needs space for the complete original archive.

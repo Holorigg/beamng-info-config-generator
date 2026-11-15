@@ -209,9 +209,10 @@ RU = {
     "For mods based on a stock model, generated files take price, power, torque, weight, years, body style, region and insurance class from the game's own files.":
         "Для модов на основе стоковых моделей цена, мощность, момент, масса, годы, кузов, регион и страховка берутся из файлов игры.",
     "ZIP write mode": "Режим записи ZIP",
-    "Automatic appends new files. Disk and RAM rebuild the archive. Replacements are committed through a temporary file next to the mod.":
-        "«Автоматически» дописывает новые файлы. «Диск» и «ОЗУ» пересобирают архив. Замены идут через временный файл рядом с модом.",
-    "Automatic appends new files without rewriting the archive.": "«Автоматически» дописывает новые файлы, не переписывая архив.",
+    "Automatic writes changed files at the end of the archive and updates its file list without rewriting the archive. Disk and RAM rebuild the whole archive through a temporary file next to the mod and drop old copies of changed files.":
+        "«Автоматически» дописывает изменённые файлы в конец архива и обновляет его оглавление, не переписывая архив. «Диск» и «ОЗУ» пересобирают весь архив через временный файл рядом с модом и убирают старые копии изменённых файлов.",
+    "Automatic is fast: the old copy of a changed file stays inside the archive, a few KB each time. Disk rebuilds a clean archive.":
+        "«Автоматически» работает быстро: старая копия изменённого файла остаётся внутри архива, по несколько КБ за раз. «Диск» пересобирает архив начисто.",
     "Back up before writes": "Делать бэкап перед записью",
     "Keeps dated .bak files next to originals. A ZIP backup requires space for the entire archive.":
         "Хранит .bak-файлы с датой рядом с оригиналами. Бэкап ZIP требует места на весь архив.",
@@ -321,7 +322,7 @@ RU = {
     "Detected automatically": "Найдено автоматически",
     "Chosen manually": "Выбрано вручную",
     "version {version}": "версия {version}",
-    "Automatic (append / disk)": "Автоматически (дописать / диск)",
+    "Automatic (fast)": "Автоматически (быстро)",
     "Disk": "Диск",
     "RAM": "ОЗУ",
     "Operation": "Операция",
@@ -351,4 +352,19 @@ RU = {
     "{count} configuration(s) could not be measured.": "Не удалось замерить конфигураций: {count}.",
     "Apply measured values": "Применение замеренных значений",
     "Writing measured values": "Запись замеренных значений",
+    "{done} of {total} configuration(s)": "Конфигураций: {done} из {total}",
+    "{mod}: rebuilding the archive, {percent}%": "{mod}: пересборка архива, {percent}%",
+    "Download": "Скачать",
+    "Skip this version": "Пропустить эту версию",
+    "Hide until next start": "Скрыть до следующего запуска",
+    "Version {version} is available. You have {current}.": "Доступна версия {version}. У вас {current}.",
+    "Check for updates": "Проверить обновления",
+    "Checking...": "Проверка...",
+    "Could not check for updates: {error}": "Не удалось проверить обновления: {error}",
+    "no release found": "релиз не найден",
+    "Version {version} is available.": "Доступна версия {version}.",
+    "You have the latest version.": "У вас последняя версия.",
+    "Check for updates at startup": "Проверять обновления при запуске",
+    "One request to GitHub when the app starts. Nothing is downloaded or installed.":
+        "Один запрос к GitHub при запуске. Ничего не скачивается и не устанавливается.",
 }

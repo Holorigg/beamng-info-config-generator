@@ -37,6 +37,7 @@ Neither version needs an installer. Keep the portable folder together, including
 - **See what happened.** Operations have progress, cancellation, and a history of completed writes and errors.
 - **RLS Contracts support.** Quickly check Drift, Drag, and Race eligibility and add selected vehicle models to the contract pool with a separate addon you can enable or disable. Works with RLS 2.7 and 2.8.
 - **English or Russian interface.** Choose the language in Settings.
+- **Update notice.** At startup the app checks GitHub once for a newer release and offers a link to it, or to skip that version. Nothing is downloaded or installed; the check can be turned off in Settings.
 
 ZIP mods, extracted mods, and the usual `repo` and `unpacked` folders are supported. You can also open a single extracted mod folder.
 
@@ -75,8 +76,8 @@ See [RLS compatibility, limitations, and verification](docs/RLS_CONTRACTS.md) fo
 
 | Mode | What it does |
 | --- | --- |
-| **Automatic** (default) | Appends new files. Rebuilds on disk when replacing existing files. |
-| **Disk** | Streams a rebuilt archive through a temporary file, keeping memory use bounded. |
+| **Automatic** (default) | Writes new and changed files at the end of the archive and updates its file list. Fast for any mod size; the old copy of a changed file stays inside, a few KB each time. |
+| **Disk** | Rebuilds a clean archive through a temporary file, copying compressed data without recompressing it. |
 | **RAM** | Holds the rebuilt compressed archive in memory, then commits it through a temporary file. |
 
 Disk and RAM rebuilds need free disk space beside the mod. RAM mode is optional and is not necessarily faster. Backups are dated `.bak` copies; backing up a ZIP needs space for the entire original archive.

@@ -9,10 +9,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer, QItemSelectionModel
-from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
+from PySide6.QtCore import Qt, QTimer, QItemSelectionModel, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
+    QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
     QMessageBox, QScrollArea, QSplitter, QTableWidget, QTableWidgetItem,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QTabWidget, QSizePolicy,
 )
@@ -29,7 +29,8 @@ from theme import COLORS, STATUS_COLOR, STATUS_ICON, STATUS_LABEL, make_dark_sty
 from workers import TaskDialog
 from i18n import set_language, t
 from ui_icons import app_icon, icon
-from about import AboutDialog
+from about import APP_VERSION, AboutDialog
+from updates import UpdateCheck, is_newer
 import game_paths
 from dialogs import (
     analyze_dialog, choose_game_dir, confirm_bulk, copy_source_dialog, history_dialog, settings_dialog,
@@ -77,6 +78,8 @@ class App(QMainWindow):
         self._scanned_mods_path = None
         self._backup_tip_shown = False
         self._detected_game = None
+        self._update_check = None
+        self._update_release = None
         self.toast_bottom_offset = 0
 
         self.mods_data: dict[str, list[ConfigEntry]] = {}
@@ -181,6 +184,7 @@ class App(QMainWindow):
         path_row.addWidget(self.rescan_btn)
         top_lay.addLayout(path_row)
         root.addWidget(top)
+        root.addWidget(self._build_update_bar())
 
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setHandleWidth(1)
@@ -1064,7 +1068,63 @@ class App(QMainWindow):
         event.accept()
 
     def _show_about(self):
-        AboutDialog(self).exec()
+        AboutDialog(self, check_updates=self.check_for_updates).exec()
+
+    def _build_update_bar(self):
+        self.update_bar = QFrame()
+        self.update_bar.setObjectName("updateBar")
+        row = QHBoxLayout(self.update_bar)
+        row.setContentsMargins(18, 8, 12, 8)
+        row.setSpacing(8)
+        mark = QLabel()
+        mark.setPixmap(icon("download", COLORS["accent"]).pixmap(16, 16))
+        row.addWidget(mark)
+        self.update_text = label("")
+        row.addWidget(self.update_text, 1)
+        row.addWidget(make_button(t("Download"), "external-link", self._open_update, "primary"))
+        row.addWidget(make_button(t("Skip this version"), "ban", self._skip_update, "ghost"))
+        row.addWidget(make_button("", "x", self.update_bar.hide, "ghost", t("Hide until next start")))
+        self.update_bar.hide()
+        return self.update_bar
+
+    def check_for_updates(self, manual=False, callback=None):
+        """One GitHub lookup; startup checks stay silent unless a new version exists."""
+        if not manual and not self._settings.get("check_updates", True):
+            return
+        check = UpdateCheck(self)
+        def finished(release, error):
+            if check is self._update_check:
+                self._update_check = None
+            check.deleteLater()
+            self._on_update_result(release, manual)
+            if callback is not None:
+                callback(release, error)
+        check.finished.connect(finished)
+        self._update_check = check
+        check.start()
+
+    def _on_update_result(self, release, manual):
+        if not release or not is_newer(release["tag"]):
+            return
+        if not manual and release["tag"] == self._settings.get("skipped_update"):
+            return
+        self._update_release = release
+        self.update_text.setText(t("Version {version} is available. You have {current}.").format(
+            version=release["version"], current=APP_VERSION))
+        self.update_bar.show()
+
+    def _open_update(self):
+        if self._update_release:
+            QDesktopServices.openUrl(QUrl(self._update_release["url"]))
+
+    def _skip_update(self):
+        if self._update_release:
+            self._settings["skipped_update"] = self._update_release["tag"]
+            try:
+                _save_settings(self._settings)
+            except OSError as exc:
+                QMessageBox.warning(self, t("Settings"), str(exc))
+        self.update_bar.hide()
 
     def _show_settings(self):
         values = settings_dialog(self, self._settings)
@@ -1463,19 +1523,40 @@ class App(QMainWindow):
     def _run_batch(self, title, items, work_fn, done_fn, subtitle=""):
         if not items or self._busy:
             return False
-        total = sum(len(item) if isinstance(item, list) else 1 for item in items)
+        groups = [item if isinstance(item, list) else [(item, None)] for item in items]
+        total = sum(len(group) for group in groups)
+        rebuilds = self._settings.get("zip_mode", "auto") != "auto"
+
+        def weight(group):
+            # A rebuild takes time in proportion to the archive; everything else is per file.
+            entry = group[0][0]
+            if rebuilds and entry.source == "zip":
+                try:
+                    return float(max(1, Path(entry.source_path).stat().st_size))
+                except OSError:
+                    pass
+            return float(len(group))
+        weights = [weight(group) for group in groups]
+        total_weight = sum(weights) or 1.0
+
         def task(cancel, progress):
-            completed, errors = 0, []
-            for item in items:
+            completed, errors, done_weight = 0, [], 0.0
+
+            def report(share, message):
+                value = round(1000 * min(1.0, (done_weight + share) / total_weight))
+                progress(value, 1000, message, t("{done} of {total} configuration(s)").format(
+                    done=completed, total=total))
+
+            for item, group, item_weight in zip(items, groups, weights):
                 if cancel.is_set():
                     break
-                group = item if isinstance(item, list) else [(item, None)]
-                entry = group[0][0]
-                label = Path(entry.source_path).name
-                progress(completed, total, f"{label}: {len(group)} configuration(s)")
+                label = Path(group[0][0].source_path).name
+                report(0.0, label)
                 self._cancel_event = cancel
-                def zip_progress(current, count, name):
-                    progress(completed, total, f"{label}: copying archive {current}/{count}")
+                def zip_progress(current, count, name, label=label, item_weight=item_weight):
+                    share = item_weight * current / max(1, count)
+                    report(share, t("{mod}: rebuilding the archive, {percent}%").format(
+                        mod=label, percent=100 * current // max(1, count)))
                 self._operation_progress = zip_progress
                 try:
                     work_fn(item)
@@ -1487,7 +1568,8 @@ class App(QMainWindow):
                 finally:
                     self._cancel_event = None
                     self._operation_progress = None
-                progress(completed, total, label)
+                done_weight += item_weight
+                report(0.0, label)
             return {"completed": completed, "errors": errors, "cancelled": cancel.is_set()}
         started = time.monotonic()
         self._busy = True

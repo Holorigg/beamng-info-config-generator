@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.4.5 - 2026-11-15
+
+- Saving a configuration inside a ZIP mod no longer rebuilds the archive in Automatic mode: the changed file is written at the end and the archive's file list points to it. A 460 MB mod took about 22 seconds and now takes a fraction of a second. Checked inside BeamNG.drive 0.40.5.
+- Disk and RAM rebuilds copy compressed data without recompressing it, and drop old copies of changed files.
+- The progress bar follows the archive being rebuilt, by size, instead of counting configurations.
+- The app checks GitHub once at startup for a newer release and offers to open it or skip that version. It can be turned off in Settings; **About** has a manual check.
+
 ## v1.4.1 - 2026-11-04
 
 - Fixed the RLS Contracts addon setting its unload mode too late, which the game warned could unload it. Apply the patch again to update an installed addon.

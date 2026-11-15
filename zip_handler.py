@@ -6,6 +6,7 @@ import copy
 import io
 import time
 import shutil
+import struct
 import tempfile
 import zipfile
 from pathlib import Path
@@ -128,19 +129,100 @@ def _zip_path(name: str) -> str:
     return name
 
 
-def _copy_zip_entry(src, dst, info, cancel=None):
+_LOCAL_HEADER = struct.Struct("<4s5H3L2H")
+_LOCAL_SIGNATURE = b"PK\x03\x04"
+_DESCRIPTOR_SIGNATURE = 0x08074B50
+_ZIP64_EXTRA = 0x0001
+_DATA_DESCRIPTOR = 0x08
+
+
+def _strip_zip64_extra(extra: bytes) -> bytes:
+    """Drop ZIP64 size fields; the writer adds its own when they are needed."""
+    kept, position = [], 0
+    while position + 4 <= len(extra):
+        tag, size = struct.unpack_from("<HH", extra, position)
+        end = position + 4 + size
+        if tag != _ZIP64_EXTRA:
+            kept.append(extra[position:end])
+        position = end
+    kept.append(extra[position:])
+    return b"".join(kept)
+
+
+def _copy_raw_entry(source, dst, info, cancel=None, advance=None):
+    """Copy one member's compressed bytes as they are, without recompressing."""
+    source.seek(info.header_offset)
+    header = source.read(_LOCAL_HEADER.size)
+    if len(header) != _LOCAL_HEADER.size or header[:4] != _LOCAL_SIGNATURE:
+        raise zipfile.BadZipFile(f"Bad local header: {info.filename}")
+    name_length, extra_length = _LOCAL_HEADER.unpack(header)[-2:]
+    source.seek(name_length + extra_length, os.SEEK_CUR)
+
     new_info = copy.copy(info)
-    if new_info.is_dir():
-        dst.writestr(new_info, b"")
-        return
-    with src.open(info, "r") as in_file:
-        with dst.open(new_info, "w", force_zip64=info.file_size >= zipfile.ZIP64_LIMIT) as out_file:
-            while True:
+    new_info.extra = _strip_zip64_extra(info.extra)
+    zip64 = info.file_size > zipfile.ZIP64_LIMIT or info.compress_size > zipfile.ZIP64_LIMIT
+    output = dst.fp
+    output.seek(dst.start_dir)
+    new_info.header_offset = output.tell()
+    output.write(new_info.FileHeader(zip64))
+    remaining = info.compress_size
+    while remaining:
+        check_cancel(cancel)
+        chunk = source.read(min(remaining, 1024 * 1024))
+        if not chunk:
+            raise zipfile.BadZipFile(f"Truncated member: {info.filename}")
+        output.write(chunk)
+        remaining -= len(chunk)
+        if advance:
+            advance(len(chunk), info.filename)
+    if new_info.flag_bits & _DATA_DESCRIPTOR:
+        layout = "<LLQQ" if zip64 else "<LLLL"
+        output.write(struct.pack(layout, _DESCRIPTOR_SIGNATURE, info.CRC, info.compress_size, info.file_size))
+    dst.start_dir = output.tell()
+    dst.filelist.append(new_info)
+    dst.NameToInfo[new_info.filename] = new_info
+
+
+def _append_or_shadow(zip_path, normalized, directory_offset, cancel=None):
+    """
+    Write members after the last entry and point the central directory at them.
+
+    A replaced member's old bytes stay in the file but are no longer listed, so
+    the archive is never rewritten. On any failure the original central
+    directory is put back and the file is truncated to its original size.
+    """
+    with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as tail:
+        with zip_path.open("rb") as original:
+            original.seek(directory_offset)
+            shutil.copyfileobj(original, tail, length=1024 * 1024)
+        try:
+            with zipfile.ZipFile(zip_path, "a", compression=zipfile.ZIP_DEFLATED) as zf:
+                replaced = [name for name in normalized if name in zf.NameToInfo]
+                if replaced:
+                    previous = {name: zf.getinfo(name) for name in replaced}
+                    zf.filelist = [info for info in zf.filelist if info.filename not in previous]
+                    for name in replaced:
+                        del zf.NameToInfo[name]
+                for name, data in normalized.items():
+                    check_cancel(cancel)
+                    if name in replaced:
+                        info = copy.copy(previous[name])
+                        info.extra = _strip_zip64_extra(info.extra)
+                        info.flag_bits &= ~_DATA_DESCRIPTOR
+                        info.compress_type = zipfile.ZIP_DEFLATED
+                        zf.writestr(info, data)
+                    else:
+                        zf.writestr(name, data)
                 check_cancel(cancel)
-                chunk = in_file.read(1024 * 1024)
-                if not chunk:
-                    break
-                out_file.write(chunk)
+        except BaseException:
+            tail.seek(0)
+            with zip_path.open("r+b") as original:
+                original.seek(directory_offset)
+                shutil.copyfileobj(tail, original, length=1024 * 1024)
+                original.truncate()
+                original.flush()
+                os.fsync(original.fileno())
+            raise
 
 
 def write_many_to_zip(zip_path: str | Path, updates: dict[str, str],
@@ -148,9 +230,11 @@ def write_many_to_zip(zip_path: str | Path, updates: dict[str, str],
     """
     Add or replace many files inside a zip archive.
 
-    Missing files are appended directly. Replacements are written through a
-    temporary archive on disk, copying entries as streams so large mods are not
-    loaded into RAM.
+    "auto" writes new and changed members at the end of the archive and only
+    rewrites its central directory, so the time does not depend on the mod's
+    size. "disk" and "ram" rebuild the whole archive without the stale copies,
+    moving compressed data as it is. progress(done_bytes, total_bytes, name)
+    reports a rebuild.
     """
     zip_path = Path(zip_path)
     if mode not in ("auto", "disk", "ram"):
@@ -176,27 +260,8 @@ def write_many_to_zip(zip_path: str | Path, updates: dict[str, str],
     if backup and exists:
         backup_file(zip_path)
 
-    if exists and mode == "auto" and normalized.keys().isdisjoint(existing_names):
-        # Keep just the overwritten directory for rollback, spilling large tails to disk.
-        with tempfile.SpooledTemporaryFile(max_size=1024 * 1024) as tail:
-            with zip_path.open("rb") as original:
-                original.seek(directory_offset)
-                shutil.copyfileobj(original, tail, length=1024 * 1024)
-            try:
-                with zipfile.ZipFile(zip_path, "a", compression=zipfile.ZIP_DEFLATED) as zf:
-                    for name, data in normalized.items():
-                        check_cancel(cancel)
-                        zf.writestr(name, data)
-                    check_cancel(cancel)
-            except BaseException:
-                tail.seek(0)
-                with zip_path.open("r+b") as original:
-                    original.seek(directory_offset)
-                    shutil.copyfileobj(tail, original, length=1024 * 1024)
-                    original.truncate()
-                    original.flush()
-                    os.fsync(original.fileno())
-                raise
+    if exists and mode == "auto":
+        _append_or_shadow(zip_path, normalized, directory_offset, cancel)
         return
 
     temp_name = None
@@ -212,21 +277,33 @@ def write_many_to_zip(zip_path: str | Path, updates: dict[str, str],
         destination = ram_buffer if ram_buffer is not None else temp_name
         with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as dst:
             if exists:
-                with zipfile.ZipFile(zip_path, "r") as src:
+                with zipfile.ZipFile(zip_path, "r") as src, zip_path.open("rb") as raw:
                     dst.comment = src.comment
-                    infos = src.infolist()
-                    last_progress = 0
-                    for index, info in enumerate(infos):
+                    # Only the last copy of a duplicated name is kept, as zipfile reads it.
+                    kept = [info for info in src.infolist()
+                            if info.filename not in normalized and src.getinfo(info.filename) is info]
+                    total = sum(info.compress_size for info in kept) or 1
+                    state = {"done": 0, "last": 0.0}
+
+                    def advance(count, name):
+                        state["done"] += count
+                        now = time.monotonic()
+                        if progress and now - state["last"] >= 0.05:
+                            progress(state["done"], total, name)
+                            state["last"] = now
+
+                    for info in kept:
                         check_cancel(cancel)
-                        if progress and time.monotonic() - last_progress >= 0.05:
-                            progress(index, len(infos), info.filename)
-                            last_progress = time.monotonic()
-                        if info.filename not in normalized:
-                            _copy_zip_entry(src, dst, info, cancel)
+                        _copy_raw_entry(raw, dst, info, cancel, advance)
+                    if progress:
+                        progress(total, total, "")
                     for name, data in normalized.items():
                         check_cancel(cancel)
                         if name in existing_names:
                             info = copy.copy(src.getinfo(name))
+                            info.extra = _strip_zip64_extra(info.extra)
+                            info.flag_bits &= ~_DATA_DESCRIPTOR
+                            info.compress_type = zipfile.ZIP_DEFLATED
                             dst.writestr(info, data)
                         else:
                             dst.writestr(name, data)
