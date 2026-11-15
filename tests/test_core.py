@@ -116,16 +116,88 @@ class ZipTests(unittest.TestCase):
 
     def test_disk_failure_and_cancellation_preserve_original(self):
         original = self.path.read_bytes()
-        with patch("zip_handler._copy_zip_entry", side_effect=OSError("disk full")), self.assertRaises(OSError):
-            write_many_to_zip(self.path, {"vehicles/car/info_a.json": "{}"})
+        with patch("zip_handler._copy_raw_entry", side_effect=OSError("disk full")), self.assertRaises(OSError):
+            write_many_to_zip(self.path, {"vehicles/car/info_a.json": "{}"}, mode="disk")
         self.assertEqual(self.path.read_bytes(), original)
         cancel = threading.Event()
         def progress(*args):
             cancel.set()
         with self.assertRaises(OperationCancelled):
-            write_many_to_zip(self.path, {"vehicles/car/info_a.json": "{}"}, cancel=cancel, progress=progress)
+            write_many_to_zip(self.path, {"vehicles/car/info_a.json": "{}"}, mode="disk",
+                              cancel=cancel, progress=progress)
         self.assertEqual(self.path.read_bytes(), original)
         self.assertFalse(list(self.root.glob("*.tmp.zip")))
+
+    def test_auto_replacement_does_not_rewrite_the_archive(self):
+        original = self.path.read_bytes()
+        with zipfile.ZipFile(self.path) as archive:
+            directory = archive.start_dir
+        with patch.object(zipfile.ZipFile, "read", side_effect=AssertionError("payload read")):
+            write_many_to_zip(self.path, {"vehicles/car/info_a.json": '{"Value":200}'})
+        data = self.path.read_bytes()
+        self.assertEqual(data[:directory], original[:directory])
+        self.assertLess(len(data) - len(original), 1024)
+        with zipfile.ZipFile(self.path) as archive:
+            self.assertIsNone(archive.testzip())
+            self.assertEqual(archive.namelist().count("vehicles/car/info_a.json"), 1)
+            self.assertEqual(archive.read("vehicles/car/info_a.json"), b'{"Value":200}')
+            self.assertEqual(archive.comment, b"archive comment")
+            self.assertEqual(archive.getinfo("vehicles/car/keep.bin").comment, b"entry comment")
+
+    def test_auto_replacement_failure_restores_original_bytes(self):
+        original = self.path.read_bytes()
+        actual_write = zipfile.ZipFile.writestr
+        calls = []
+        def fail_second(archive, *args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                raise OSError("simulated full disk")
+            return actual_write(archive, *args, **kwargs)
+        with patch.object(zipfile.ZipFile, "writestr", fail_second), self.assertRaises(OSError):
+            write_many_to_zip(self.path, {"vehicles/car/info_a.json": "{}", "new.json": "{}"})
+        self.assertEqual(self.path.read_bytes(), original)
+
+    def test_rebuild_drops_stale_copies_without_recompressing(self):
+        for _ in range(3):
+            write_many_to_zip(self.path, {"vehicles/car/info_a.json": "{}"})
+        grown = self.path.stat().st_size
+        with zipfile.ZipFile(self.path) as archive:
+            before = {info.filename: (info.CRC, info.compress_size, info.compress_type)
+                      for info in archive.infolist()}
+        seen = []
+        with patch("zipfile._get_decompressor", side_effect=AssertionError("decompressed")):
+            write_many_to_zip(self.path, {"vehicles/car/info_b.json": "{}"}, mode="disk",
+                              progress=lambda done, total, name: seen.append((done, total)))
+        self.assertLess(self.path.stat().st_size, grown)
+        self.assertEqual(seen[-1][0], seen[-1][1])
+        with zipfile.ZipFile(self.path) as archive:
+            self.assertIsNone(archive.testzip())
+            for info in archive.infolist():
+                if info.filename in before:
+                    self.assertEqual((info.CRC, info.compress_size, info.compress_type), before[info.filename])
+
+    def test_rebuild_copies_members_with_data_descriptors(self):
+        class Unseekable:
+            def __init__(self, stream):
+                self.stream = stream
+            def write(self, data):
+                return self.stream.write(data)
+            def flush(self):
+                self.stream.flush()
+        with self.path.open("wb") as raw:
+            with zipfile.ZipFile(Unseekable(raw), "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("vehicles/car/keep.bin", b"keep" * 10000)
+                archive.writestr("stored.bin", b"stored", compress_type=zipfile.ZIP_STORED)
+        with zipfile.ZipFile(self.path) as archive:
+            self.assertTrue(archive.getinfo("vehicles/car/keep.bin").flag_bits & 0x08)
+        for mode in ("disk", "ram", "auto"):
+            with self.subTest(mode=mode):
+                write_many_to_zip(self.path, {"vehicles/car/info_a.json": "{}"}, mode=mode)
+                with zipfile.ZipFile(self.path) as archive:
+                    self.assertIsNone(archive.testzip())
+                    self.assertEqual(archive.read("vehicles/car/keep.bin"), b"keep" * 10000)
+                    self.assertEqual(archive.read("stored.bin"), b"stored")
+                    self.assertEqual(archive.getinfo("stored.bin").compress_type, zipfile.ZIP_STORED)
 
     def test_append_cancel_rolls_back_committed_members(self):
         original = self.path.read_bytes()

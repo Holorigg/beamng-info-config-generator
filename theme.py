@@ -57,6 +57,8 @@ def make_dark_style():
                     padding: 0 8px; font-size: 9pt; min-height: 18px; max-height: 18px; }}
 
     QWidget#topBar {{ background: {c['surface']}; border-bottom: 1px solid {c['border']}; }}
+    QFrame#updateBar {{ background: {c['accent_soft']}; border-bottom: 1px solid {c['border']}; }}
+    QFrame#updateBar QLabel {{ background: transparent; }}
     QWidget#botBar {{ background: {c['surface']}; border-top: 1px solid {c['border']}; }}
     QWidget#sidePanel {{ background: {c['surface']}; }}
     QWidget#editorPanel, QWidget#formPage {{ background: {c['window']}; }}

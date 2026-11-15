@@ -117,6 +117,7 @@ def main():
             sys.exit(1)
         return
     window.show()
+    window.check_for_updates()
     sys.exit(app.exec())
 
 

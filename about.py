@@ -12,13 +12,14 @@ from ui_icons import app_icon, icon, resource_path
 
 APP_NAME = "BeamNG Info Config Generator"
 APP_AUTHOR = "Holorigg"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.5"
 PROJECT_URL = "https://github.com/Holorigg/beamng-info-config-generator"
 
 
 class AboutDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, check_updates=None):
         super().__init__(parent)
+        self._check_updates = check_updates
         self.setWindowTitle(t("About"))
         self.setWindowIcon(app_icon())
         self.resize(560, 440)
@@ -49,6 +50,19 @@ class AboutDialog(QDialog):
         version = QLabel(t("Version: {version}").format(version=APP_VERSION))
         version.setObjectName("muted")
         body.addWidget(version)
+        if check_updates is not None:
+            update_row = QHBoxLayout()
+            self.update_button = QPushButton(t("Check for updates"))
+            self.update_button.setIcon(icon("refresh-cw"))
+            self.update_button.setIconSize(QSize(18, 18))
+            self.update_button.clicked.connect(lambda checked=False: self._check())
+            update_row.addWidget(self.update_button)
+            self.update_status = QLabel("")
+            self.update_status.setObjectName("muted")
+            self.update_status.setWordWrap(True)
+            self.update_status.setOpenExternalLinks(True)
+            update_row.addWidget(self.update_status, 1)
+            body.addLayout(update_row)
         body.addWidget(QLabel(t("MIT License")))
         credit = QLabel(t("Icons by Lucide and Feather (ISC / MIT)."))
         credit.setObjectName("muted")
@@ -87,3 +101,23 @@ class AboutDialog(QDialog):
         close.clicked.connect(self.accept)
         footer.addWidget(close)
         layout.addLayout(footer)
+
+    def _check(self):
+        self.update_button.setEnabled(False)
+        self.update_status.setText(t("Checking..."))
+        self._check_updates(manual=True, callback=self._show_result)
+
+    def _show_result(self, release, error):
+        try:
+            self.update_button.setEnabled(True)
+        except RuntimeError:
+            return  # The dialog is already closed.
+        from updates import is_newer
+        if error or not release:
+            self.update_status.setText(t("Could not check for updates: {error}").format(
+                error=error or t("no release found")))
+        elif is_newer(release["tag"]):
+            link = f'<a href="{release["url"]}">{t("Download")}</a>'
+            self.update_status.setText(t("Version {version} is available.").format(version=release["version"]) + " " + link)
+        else:
+            self.update_status.setText(t("You have the latest version."))

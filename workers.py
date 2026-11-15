@@ -11,7 +11,7 @@ from ui_icons import icon
 
 
 class TaskWorker(QThread):
-    progress = Signal(int, int, str)
+    progress = Signal(int, int, str, str)
 
     def __init__(self, task, parent=None):
         super().__init__(parent)
@@ -23,11 +23,15 @@ class TaskWorker(QThread):
 
     def run(self):
         try:
-            self.value = self.task(self.cancel_event, self.progress.emit)
+            self.value = self.task(self.cancel_event, self.report)
         except OperationCancelled:
             self.cancelled = True
         except Exception:
             self.error = traceback.format_exc()
+
+    def report(self, current, total, message, count=None):
+        """Progress from the task; count replaces the default "current / total" text."""
+        self.progress.emit(current, total, message, f"{current} / {total}" if count is None else count)
 
 
 class TaskDialog(QDialog):
@@ -55,12 +59,12 @@ class TaskDialog(QDialog):
         self.worker.progress.connect(self.on_progress)
         self.worker.finished.connect(self.on_finished)
 
-    @Slot(int, int, str)
-    def on_progress(self, current, total, message):
+    @Slot(int, int, str, str)
+    def on_progress(self, current, total, message, count):
         self.bar.setRange(0, max(1, total))
         self.bar.setValue(current)
         self.label.setText(message)
-        self.count.setText(f"{current} / {total}")
+        self.count.setText(count)
 
     @Slot()
     def cancel(self):
